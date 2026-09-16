@@ -93,10 +93,13 @@ async function runCommand(
     let stderr = '';
     let timedOut = false;
 
-    const timeoutId = setTimeout(() => {
-      timedOut = true;
-      proc.kill('SIGTERM');
-    }, timeout);
+    // timeout <= 0 means no timeout (e.g., gui command runs indefinitely)
+    const timeoutId = timeout > 0
+      ? setTimeout(() => {
+          timedOut = true;
+          proc.kill('SIGTERM');
+        }, timeout)
+      : null;
 
     proc.stdout?.on('data', (data: Buffer) => {
       const str = data.toString();
@@ -111,7 +114,7 @@ async function runCommand(
     });
 
     proc.on('close', (code) => {
-      clearTimeout(timeoutId);
+      if (timeoutId) clearTimeout(timeoutId);
       if (timedOut) {
         resolveResult({
           ok: false,
@@ -130,7 +133,7 @@ async function runCommand(
     });
 
     proc.on('error', (err) => {
-      clearTimeout(timeoutId);
+      if (timeoutId) clearTimeout(timeoutId);
       resolveResult({
         ok: false,
         exitCode: 1,

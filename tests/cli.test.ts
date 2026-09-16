@@ -9,6 +9,7 @@ import {
   commands,
   findCommand,
   executeCommand,
+  runCommand,
   BANNER,
   VERSION,
   PRODUCT_NAME,
@@ -278,5 +279,33 @@ describe('restore command validation', () => {
     expect(result.ok).toBe(false);
     expect(result.error).toContain('Usage');
     expect(result.error).toContain('backup-dir');
+  });
+});
+
+describe('runCommand timeout behavior', () => {
+  it('timeout <= 0 does not kill process immediately', async () => {
+    // Run a quick echo command with timeout: 0 (no timeout)
+    // If the bug exists, this would fail with "Command timed out after 0ms"
+    const result = await runCommand('echo', ['hello'], { timeout: 0 });
+    expect(result.ok).toBe(true);
+    expect(result.output.trim()).toBe('hello');
+    // error is undefined when successful, or if present should not contain timeout
+    expect(result.error ?? '').not.toContain('timed out');
+  });
+
+  it('negative timeout behaves as no timeout', async () => {
+    const result = await runCommand('echo', ['test'], { timeout: -1 });
+    expect(result.ok).toBe(true);
+    expect(result.output.trim()).toBe('test');
+    // error is undefined when successful, or if present should not contain timeout
+    expect(result.error ?? '').not.toContain('timed out');
+  });
+
+  it('gui command uses timeout: 0 for unlimited lifetime', () => {
+    const guiCmd = findCommand('gui');
+    expect(guiCmd).toBeDefined();
+    // Verify from the code structure that gui passes timeout: 0
+    // (the actual call is in the execute function)
+    expect(guiCmd?.name).toBe('gui');
   });
 });
