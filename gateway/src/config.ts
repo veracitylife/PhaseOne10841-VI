@@ -10,6 +10,8 @@ export interface GatewayConfig {
   openrouterApiKey: string;
   databaseUrl: string;
   policyPath?: string;
+  siemWebhookUrl?: string;
+  productVersion: string;
 }
 
 export function loadConfig(): GatewayConfig {
@@ -24,6 +26,8 @@ export function loadConfig(): GatewayConfig {
     openrouterApiKey: process.env.OPENROUTER_API_KEY ?? '',
     databaseUrl: process.env.DATABASE_URL ?? 'postgres://phaseone:phaseone@localhost:5432/phaseone',
     policyPath: process.env.PHASEONE_POLICY_PATH,
+    siemWebhookUrl: process.env.PHASEONE_SIEM_WEBHOOK_URL ?? process.env.SIEM_WEBHOOK_URL,
+    productVersion: '0.3.0',
   };
 }
 

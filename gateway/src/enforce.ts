@@ -1,14 +1,23 @@
 import { randomUUID } from 'node:crypto';
 import { evaluateToolCall, evaluatePolicy } from '../../policy/src/engine.js';
 import { matchCanaries } from '../../canaries/src/detector.js';
-import { detectSecrets, redactSecrets } from '../../shared/src/secrets.js';
+import {
+  detectSecrets,
+  redactSecrets,
+  redactSecretsDeep,
+} from '../../shared/src/secrets.js';
 import {
   recordEvent,
   createApproval,
-  getApproval,
 } from '../../recorder/src/recorder.js';
 import type { PolicyDecision } from '../../shared/src/types.js';
 import { scanMessagesWithPolicy, scanUntrustedPayload } from './scanner.js';
+import {
+  waitForApprovalDecision,
+  riskForTool,
+  approvalExpiresAt,
+  getApprovalTimeoutMs,
+} from './approval.js';
 
 export interface EnforceResult {
   allowed: boolean;
@@ -113,7 +122,7 @@ export async function enforceToolCall(opts: {
     event_type: 'tool.call',
     severity: decision.action === 'deny' ? 'high' : decision.action === 'require_approval' ? 'medium' : 'info',
     tool_name: opts.toolName,
-    tool_args: opts.toolArgs,
+    tool_args: redactSecretsDeep(opts.toolArgs),
     destination,
     decision: decision.action === 'require_approval' ? 'require_approval' : decision.action === 'deny' ? 'deny' : 'allow',
     decision_reason: decision.reason,
@@ -142,7 +151,7 @@ export async function enforceToolCall(opts: {
     await recordEvent({
       session_id: opts.sessionId,
       agent_id: opts.agentId,
-      event_type: 'secret.detected',
+      event_type: decision.action === 'deny' ? 'secret.blocked' : 'secret.detected',
       severity: 'high',
       tool_name: opts.toolName,
       decision: decision.action === 'deny' ? 'deny' : 'allow',
@@ -177,7 +186,7 @@ export async function enforceToolCall(opts: {
       severity: decision.action === 'allow' ? 'info' : 'high',
       tool_name: opts.toolName,
       destination,
-      tool_args: opts.toolArgs,
+      tool_args: redactSecretsDeep(opts.toolArgs),
       decision: decision.action === 'require_approval' ? 'require_approval' : decision.action === 'deny' ? 'deny' : 'allow',
       decision_reason: decision.reason,
     });
@@ -200,10 +209,10 @@ export async function enforceToolCall(opts: {
     await recordEvent({
       session_id: opts.sessionId,
       agent_id: opts.agentId,
-      event_type: 'mcp.call',
+      event_type: decision.action === 'deny' ? 'mcp.denied' : 'mcp.call',
       severity: decision.action === 'allow' ? 'info' : 'high',
       tool_name: opts.toolName,
-      tool_args: opts.toolArgs,
+      tool_args: redactSecretsDeep(opts.toolArgs),
       decision: decision.action === 'require_approval' ? 'require_approval' : decision.action === 'deny' ? 'deny' : 'allow',
       decision_reason: decision.reason,
     });
@@ -241,40 +250,51 @@ export async function enforceToolCall(opts: {
   }
 
   if (decision.action === 'require_approval') {
+    const risk = decision.risk ?? riskForTool(opts.toolName, decision.reason);
+    const expiresAt = approvalExpiresAt();
     const approval = await createApproval({
       session_id: opts.sessionId,
       agent_id: opts.agentId,
       action_type: opts.toolName,
-      payload: { tool: opts.toolName, args: opts.toolArgs },
+      payload: {
+        tool: opts.toolName,
+        args: redactSecretsDeep(opts.toolArgs),
+        destination,
+      },
       status: 'pending',
       reason: decision.reason,
+      risk,
+      expires_at: expiresAt,
     });
     await recordEvent({
       session_id: opts.sessionId,
       agent_id: opts.agentId,
       event_type: 'approval.requested',
-      severity: 'medium',
+      severity: risk === 'critical' || risk === 'high' ? 'high' : 'medium',
       tool_name: opts.toolName,
+      tool_args: redactSecretsDeep(opts.toolArgs),
+      destination,
       decision: 'require_approval',
       decision_reason: decision.reason,
-      metadata: { approval_id: approval.id },
+      metadata: {
+        approval_id: approval.id,
+        risk,
+        expires_at: expiresAt,
+        timeout_ms: getApprovalTimeoutMs(),
+      },
     });
 
     if (opts.waitForApproval && approval.id) {
-      for (let i = 0; i < 3; i++) {
-        await new Promise((r) => setTimeout(r, 200));
-        const current = await getApproval(approval.id);
-        if (current?.status === 'approved') {
-          return { allowed: true, decision: { ...decision, action: 'allow', reason: 'approved by human' } };
-        }
-        if (current?.status === 'denied') {
-          return {
-            allowed: false,
-            decision: { ...decision, action: 'deny', reason: 'denied by human' },
-            blockedResponse: blockedPayload({ ...decision, action: 'deny', reason: 'denied by human' }),
-          };
-        }
+      const wait = await waitForApprovalDecision({ approvalId: approval.id });
+      if (wait.status === 'approved') {
+        return { allowed: true, approvalId: approval.id, decision: wait.decision };
       }
+      return {
+        allowed: false,
+        approvalId: approval.id,
+        decision: wait.decision,
+        blockedResponse: blockedPayload(wait.decision),
+      };
     }
 
     return {
@@ -290,7 +310,10 @@ export async function enforceToolCall(opts: {
           phaseone: {
             approval_id: approval.id,
             reason: decision.reason,
+            risk,
             status: 'pending',
+            expires_at: expiresAt,
+            poll_hint: 'GET /v1/phaseone/approvals/:id or wait_for_approval=true',
           },
         },
       },

@@ -16,7 +16,6 @@ import {
   recordEvent,
   ensureSession,
   listEvents,
-  getSessionTimeline,
   listApprovals,
   resolveApproval,
   getDashboardCounts,
@@ -29,11 +28,15 @@ import { analyzePermissions, formatReportText } from './permissions.js';
 import { processA2AMessage } from './a2a-firewall.js';
 import { runInjectionScan, getInjectionPolicy } from './scanner.js';
 import { listInjectionRules } from '../../shared/src/prompt-injection.js';
+import { registerPhase3Routes } from './routes/phase3.js';
+import { registerGatewayMiddleware } from './middleware/index.js';
+import { getRichSessionTimeline } from '../../recorder/src/recorder.js';
 
 const cfg = loadConfig();
 loadPolicy(cfg.policyPath);
 
 const app = new Hono();
+registerGatewayMiddleware(app);
 app.use('*', cors());
 
 app.get('/health', async (c) => {
@@ -41,7 +44,10 @@ app.get('/health', async (c) => {
   return c.json({
     status: dbOk ? 'ok' : 'degraded',
     service: 'phaseone-gateway',
-    version: '0.2.0',
+    product: 'PhaseOne10841',
+    vendor: 'Veracity Integrity LLC',
+    site: 'https://VeracityIntegrity.com',
+    version: cfg.productVersion,
     upstream: resolveUpstream(cfg).label,
     db: dbOk,
   });
@@ -180,7 +186,7 @@ app.post('/v1/chat/completions', async (c) => {
               session_id: sessionId,
               agent_id: agentId,
               upstream: upstream.label,
-              gateway: 'phaseone-core/0.2.0',
+              gateway: 'phaseone-core/0.3.0',
             },
           }
         : data;
@@ -418,8 +424,14 @@ app.get('/v1/phaseone/events', async (c) => {
 });
 
 app.get('/v1/phaseone/sessions/:id/timeline', async (c) => {
-  const timeline = await getSessionTimeline(c.req.param('id'));
-  return c.json({ session_id: c.req.param('id'), events: timeline });
+  const agentId = c.req.query('agent_id') || undefined;
+  const rich = await getRichSessionTimeline(c.req.param('id'), { agentId });
+  return c.json({
+    session_id: rich.session_id,
+    agent_filter: rich.agent_filter,
+    events: rich.events,
+    steps: rich.steps,
+  });
 });
 
 app.get('/v1/phaseone/stats', async (c) => {
@@ -445,15 +457,33 @@ app.get('/v1/phaseone/approvals/:id', async (c) => {
 });
 
 app.post('/v1/phaseone/approvals/:id/approve', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { resolved_by?: string };
-  const approval = await resolveApproval(c.req.param('id'), 'approved', body.resolved_by ?? 'dashboard');
+  const body = (await c.req.json().catch(() => ({}))) as {
+    resolved_by?: string;
+    note?: string;
+    resolution_note?: string;
+  };
+  const approval = await resolveApproval(
+    c.req.param('id'),
+    'approved',
+    body.resolved_by ?? 'dashboard',
+    body.resolution_note ?? body.note
+  );
   if (!approval) return c.json({ error: 'not found or already resolved' }, 404);
   return c.json(approval);
 });
 
 app.post('/v1/phaseone/approvals/:id/deny', async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as { resolved_by?: string };
-  const approval = await resolveApproval(c.req.param('id'), 'denied', body.resolved_by ?? 'dashboard');
+  const body = (await c.req.json().catch(() => ({}))) as {
+    resolved_by?: string;
+    note?: string;
+    resolution_note?: string;
+  };
+  const approval = await resolveApproval(
+    c.req.param('id'),
+    'denied',
+    body.resolved_by ?? 'dashboard',
+    body.resolution_note ?? body.note
+  );
   if (!approval) return c.json({ error: 'not found or already resolved' }, 404);
   return c.json(approval);
 });
@@ -470,8 +500,11 @@ app.get('/v1/phaseone/policy', (c) => {
   return c.json(policy);
 });
 
+registerPhase3Routes(app, cfg);
+
 const port = cfg.port;
-console.log(`PhaseOne10841 gateway listening on :${port} (upstream=${resolveUpstream(cfg).label})`);
+console.log(`PhaseOne10841 Agent Security Gateway v0.3.0 — Veracity Integrity LLC`);
+console.log(`Listening on :${port} (upstream=${resolveUpstream(cfg).label}) · https://VeracityIntegrity.com`);
 serve({ fetch: app.fetch, port, hostname: '0.0.0.0' });
 
 export default app;

@@ -29,7 +29,9 @@ export interface PolicyConfig {
   mcp: {
     mode: 'allowlist' | 'denylist';
     allow_servers: string[];
+    /** Empty = all tools on allowed servers. Non-empty = enforce tool allowlist. */
     allow_tools: string[];
+    deny_tools?: string[];
   };
   destructive: {
     patterns: string[];
@@ -41,10 +43,24 @@ export interface PolicyConfig {
   };
   secret_egress: {
     block: boolean;
+    /** When true, block secrets in any outbound tool args (not only HTTP). */
+    block_on_tool_args?: boolean;
   };
   canary: {
     block_on_detect: boolean;
     severity: string;
+  };
+  /** Phase 3: human approval timeout / poll policy */
+  approval?: {
+    timeout_ms: number;
+    poll_interval_ms: number;
+    expire_on_timeout: boolean;
+  };
+  /** Phase 3: SIEM export defaults */
+  siem?: {
+    webhook_enabled: boolean;
+    webhook_url?: string;
+    jsonl_enabled: boolean;
   };
   /** Phase 2: prompt-injection controls */
   prompt_injection?: {
@@ -76,4 +92,3 @@ export interface PolicyConfig {
     record_findings_on_session_start: boolean;
   };
 }
-

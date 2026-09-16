@@ -10,19 +10,24 @@ export type EventType =
   | 'filesystem.access'
   | 'shell.exec'
   | 'mcp.call'
+  | 'mcp.denied'
   | 'policy.decision'
   | 'canary.trigger'
   | 'secret.detected'
+  | 'secret.blocked'
   | 'prompt_injection.detected'
   | 'prompt_injection.blocked'
   | 'approval.requested'
   | 'approval.resolved'
+  | 'approval.expired'
   | 'agent.spawn'
   | 'a2a.message'
   | 'a2a.blocked'
   | 'a2a.quarantined'
   | 'permission.findings'
   | 'lab.detector_hit'
+  | 'siem.export'
+  | 'siem.webhook'
   | 'session.start'
   | 'session.end';
 
@@ -34,6 +39,8 @@ export type A2ATrustLevel =
   | 'REMOTE-VERIFIED'
   | 'REMOTE-UNKNOWN'
   | 'QUARANTINED';
+
+export type ApprovalRisk = 'low' | 'medium' | 'high' | 'critical';
 
 export interface AgentEvent {
   id?: string;
@@ -58,11 +65,42 @@ export interface ApprovalRequest {
   agent_id: string;
   action_type: string;
   payload: unknown;
-  status: 'pending' | 'approved' | 'denied';
+  status: 'pending' | 'approved' | 'denied' | 'expired';
   reason?: string | null;
+  risk?: ApprovalRisk | null;
+  note?: string | null;
+  resolution_note?: string | null;
+  expires_at?: string | null;
   created_at?: string;
   resolved_at?: string | null;
   resolved_by?: string | null;
+}
+
+/** Ordered chain step for session replay (Phase 3) */
+export interface TimelineStep {
+  index: number;
+  event_id: string;
+  timestamp?: string;
+  agent_id: string;
+  event_type: EventType;
+  severity: EventSeverity;
+  tool_name?: string | null;
+  /** Redacted args safe for UI/export */
+  args_redacted?: unknown;
+  destination?: string | null;
+  result?: unknown;
+  decision?: PolicyAction | null;
+  decision_reason?: string | null;
+  next_event_id?: string | null;
+  parent_event_id?: string | null;
+  chain: {
+    agent: string;
+    tool?: string | null;
+    args?: unknown;
+    dest?: string | null;
+    result?: unknown;
+    next?: string | null;
+  };
 }
 
 export interface PolicyCheckContext {
@@ -89,4 +127,5 @@ export interface PolicyDecision {
   matchedCanaries?: string[];
   matchedSecrets?: string[];
   requireApproval?: boolean;
+  risk?: ApprovalRisk;
 }

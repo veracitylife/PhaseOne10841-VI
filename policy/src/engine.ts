@@ -3,7 +3,12 @@ import { dirname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 import type { PolicyCheckContext, PolicyDecision } from '../../shared/src/types.js';
-import { detectSecrets } from '../../shared/src/secrets.js';
+import {
+  detectSecrets,
+  detectSecretsInValue,
+  collectEgressText,
+  OUTBOUND_TOOL_NAMES,
+} from '../../shared/src/secrets.js';
 import { matchCanaries } from '../../canaries/src/detector.js';
 import type { PolicyConfig } from './types.js';
 
@@ -166,10 +171,22 @@ export function evaluatePolicy(ctx: PolicyCheckContext, policy?: PolicyConfig): 
     }
   }
 
-  const secrets = detectSecrets(egressText);
+  // Deep scan tool args / HTTP bodies for secret shapes (Phase 3)
+  const deepSecrets = detectSecretsInValue(ctx.toolArgs);
+  const flatSecrets = detectSecrets(egressText);
+  const secrets = [...flatSecrets];
+  for (const s of deepSecrets) {
+    if (!secrets.some((x) => x.type === s.type && x.preview === s.preview)) secrets.push(s);
+  }
   if (secrets.length > 0) {
     matchedSecrets.push(...secrets.map((s) => s.type));
-    if (p.secret_egress.block && (ctx.domain || ctx.url || ctx.egressBody || ctx.toolName === 'http_request' || ctx.toolName === 'fetch')) {
+    const blockOnArgs = p.secret_egress.block_on_tool_args !== false;
+    const isOutbound =
+      !!ctx.domain ||
+      !!ctx.url ||
+      !!ctx.egressBody ||
+      (ctx.toolName ? OUTBOUND_TOOL_NAMES.has(ctx.toolName) : false);
+    if (p.secret_egress.block && (isOutbound || (blockOnArgs && ctx.toolName))) {
       return {
         action: 'deny',
         reason: `secret egress blocked: ${matchedSecrets.join(', ')}`,
@@ -265,18 +282,73 @@ export function evaluatePolicy(ctx: PolicyCheckContext, policy?: PolicyConfig): 
     }
   }
 
-  // MCP allowlist
-  if (ctx.mcpServer || ctx.toolName === 'mcp_call') {
+  // MCP allowlist — server + tool end-to-end (Phase 3)
+  if (ctx.mcpServer || ctx.mcpTool || ctx.toolName === 'mcp_call') {
+    const args = (typeof ctx.toolArgs === 'object' && ctx.toolArgs ? ctx.toolArgs : {}) as Record<string, unknown>;
     const server =
       ctx.mcpServer ??
-      (typeof ctx.toolArgs === 'object' && ctx.toolArgs && 'server' in (ctx.toolArgs as object)
-        ? String((ctx.toolArgs as { server: string }).server)
-        : null);
-    if (server && p.mcp.mode === 'allowlist' && !p.mcp.allow_servers.includes(server)) {
-      return { action: 'deny', reason: `MCP server not allowlisted: ${server}`, ruleId: 'mcp.allowlist', matchedCanaries, matchedSecrets };
+      (typeof args.server === 'string' ? args.server : typeof args.mcp_server === 'string' ? args.mcp_server : null);
+    const mcpTool =
+      ctx.mcpTool ??
+      (typeof args.tool === 'string'
+        ? args.tool
+        : typeof args.name === 'string'
+          ? args.name
+          : typeof args.mcp_tool === 'string'
+            ? args.mcp_tool
+            : null);
+
+    if (!server) {
+      return {
+        action: 'deny',
+        reason: 'MCP call missing server name',
+        ruleId: 'mcp.server.required',
+        matchedCanaries,
+        matchedSecrets,
+      };
     }
-    if (ctx.mcpTool && p.mcp.allow_tools.length > 0 && !p.mcp.allow_tools.includes(ctx.mcpTool)) {
-      return { action: 'deny', reason: `MCP tool not allowlisted: ${ctx.mcpTool}`, ruleId: 'mcp.tool', matchedCanaries, matchedSecrets };
+
+    if (p.mcp.mode === 'allowlist' && !p.mcp.allow_servers.includes(server)) {
+      return {
+        action: 'deny',
+        reason: `MCP server not allowlisted: ${server}`,
+        ruleId: 'mcp.allowlist',
+        matchedCanaries,
+        matchedSecrets,
+      };
+    }
+
+
+    if (mcpTool && p.mcp.deny_tools?.includes(mcpTool)) {
+      return {
+        action: 'deny',
+        reason: `MCP tool denied: ${mcpTool}`,
+        ruleId: 'mcp.tool.deny',
+        matchedCanaries,
+        matchedSecrets,
+      };
+    }
+
+    // Non-empty allow_tools → enforce; empty → all tools on allowed servers OK
+    if (mcpTool && p.mcp.allow_tools.length > 0 && !p.mcp.allow_tools.includes(mcpTool)) {
+      return {
+        action: 'deny',
+        reason: `MCP tool not allowlisted: ${mcpTool}`,
+        ruleId: 'mcp.tool.allowlist',
+        matchedCanaries,
+        matchedSecrets,
+      };
+    }
+
+    // mcp_call with allow_tools configured but no tool name → deny (cannot verify)
+    if (!mcpTool && p.mcp.allow_tools.length > 0) {
+      return {
+        action: 'deny',
+        reason: 'MCP call missing tool name while tool allowlist is enforced',
+        ruleId: 'mcp.tool.required',
+        matchedCanaries,
+        matchedSecrets,
+      };
     }
   }
 
@@ -304,6 +376,7 @@ export function evaluatePolicy(ctx: PolicyCheckContext, policy?: PolicyConfig): 
       matchedCanaries,
       matchedSecrets,
       requireApproval: true,
+      risk: 'high',
     };
   }
 
@@ -324,6 +397,27 @@ export function evaluateToolCall(
   args: unknown
 ): PolicyDecision {
   const a = (args ?? {}) as Record<string, unknown>;
+  const mcpServer =
+    typeof a.server === 'string'
+      ? a.server
+      : typeof a.mcp_server === 'string'
+        ? a.mcp_server
+        : undefined;
+  const mcpTool =
+    typeof a.tool === 'string'
+      ? a.tool
+      : typeof a.name === 'string' && name === 'mcp_call'
+        ? a.name
+        : typeof a.mcp_tool === 'string'
+          ? a.mcp_tool
+          : undefined;
+  const bodyText =
+    typeof a.body === 'string'
+      ? a.body
+      : a.body != null
+        ? collectEgressText(a.body)
+        : collectEgressText(args);
+  const headersText = a.headers != null ? collectEgressText(a.headers) : '';
   return evaluatePolicy({
     agentId,
     sessionId,
@@ -334,9 +428,9 @@ export function evaluateToolCall(
     method: typeof a.method === 'string' ? a.method : undefined,
     path: typeof a.path === 'string' ? a.path : undefined,
     shellCommand: typeof a.command === 'string' ? a.command : undefined,
-    mcpServer: typeof a.server === 'string' ? a.server : undefined,
-    mcpTool: typeof a.tool === 'string' ? a.tool : undefined,
-    egressBody: typeof a.body === 'string' ? a.body : JSON.stringify(args ?? {}),
+    mcpServer,
+    mcpTool,
+    egressBody: [bodyText, headersText].filter(Boolean).join('\n'),
     spawnDepth: typeof a.depth === 'number' ? a.depth : undefined,
     actionHint: name,
   });

@@ -1,5 +1,6 @@
-# PhaseOne10841 default policy — defensive default-deny where noted
-version: "0.2"
+# PhaseOne10841 default policy — Veracity Integrity LLC
+# https://VeracityIntegrity.com
+version: "0.3"
 name: phaseone-default
 
 domains:
@@ -103,11 +104,13 @@ mcp:
     - memory
     - brave-search
     - lab-fake-mcp  # defensive lab stub only
-  allow_tools: []  # empty = all tools on allowed servers
+  # Empty = all tools on allowed servers. Populate to enforce tool allowlist.
+  allow_tools: []
+  deny_tools:
+    - unrestricted_exec
+    - raw_shell
 
 destructive:
-  # Actions that require human approval before proceeding
-  # Patterns use JS RegExp syntax (use flag i via engine, not (?i))
   patterns:
     - "delete|unlink|rm\\s|remove_file|drop\\s+table|truncate|force.?push|git\\s+push\\s+--force|destroy|wipe|format\\s"
     - "DROP\\s+(TABLE|DATABASE|SCHEMA)"
@@ -124,15 +127,27 @@ agent_spawn:
 
 secret_egress:
   block: true
+  block_on_tool_args: true
 
 canary:
   block_on_detect: true
   severity: high
 
+# Phase 3 — human approval timeout policy
+approval:
+  timeout_ms: 120000
+  poll_interval_ms: 500
+  expire_on_timeout: true
+
+# Phase 3 — SIEM export defaults (URL via env PHASEONE_SIEM_WEBHOOK_URL)
+siem:
+  webhook_enabled: false
+  jsonl_enabled: true
+
 # Phase 2 — prompt injection scanner
 prompt_injection:
-  block_mode: true          # block untrusted (tool/RAG/MCP) hits at min severity
-  block_user: false         # detect user prompts; do not hard-block by default
+  block_mode: true
+  block_user: false
   scan_untrusted: true
   scan_user: true
   scan_system: false

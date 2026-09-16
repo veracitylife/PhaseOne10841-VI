@@ -10,6 +10,7 @@ services:
     volumes:
       - phaseone_pg:/var/lib/postgresql/data
       - ./db/migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+      - ./db/migrations/002_phase3.sql:/docker-entrypoint-initdb.d/002_phase3.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U phaseone -d phaseone"]
       interval: 5s
@@ -29,10 +30,12 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
       PHASEONE_POLICY_PATH: /app/policy/default-policy.yaml
+      PHASEONE_SIEM_WEBHOOK_URL: ${PHASEONE_SIEM_WEBHOOK_URL:-}
+      PHASEONE_APPROVAL_TIMEOUT_MS: ${PHASEONE_APPROVAL_TIMEOUT_MS:-120000}
     ports:
       - "8080:8080"
     volumes:
-      - ./policy:/app/policy:ro
+      - ./policy:/app/policy
       - ./canaries:/app/canaries:ro
     depends_on:
       postgres:
@@ -46,6 +49,16 @@ services:
     environment:
       DASHBOARD_PORT: "3000"
       GATEWAY_URL: http://gateway:8080
+      PHASEONE_DASHBOARD_AUTH: ${PHASEONE_DASHBOARD_AUTH:-true}
+      PHASEONE_ADMIN_EMAILS: ${PHASEONE_ADMIN_EMAILS:-admin@localhost}
+      PHASEONE_SESSION_SECRET: ${PHASEONE_SESSION_SECRET:-dev-only-change-me}
+      PHASEONE_OTP_FALLBACK_FILE: ${PHASEONE_OTP_FALLBACK_FILE:-/tmp/phaseone-otp.log}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-noreply@veracityintegrity.com}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
     ports:
       - "3000:3000"
     depends_on:

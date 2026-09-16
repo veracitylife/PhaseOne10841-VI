@@ -3,203 +3,604 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>PhaseOne10841 — Agent EDR</title>
+  <title>PhaseOne10841 — Veracity Integrity LLC</title>
   <style>
     :root {
-      --bg: #0b1220;
-      --panel: #121a2b;
-      --border: #243049;
-      --text: #e8eefc;
-      --muted: #9aa8c7;
-      --accent: #5b8cff;
-      --danger: #ff5d6c;
-      --warn: #ffb020;
-      --ok: #3dd68c;
+      --bg: #0b1220; --panel: #121a2b; --border: #243049; --text: #e8eefc;
+      --muted: #9aa8c7; --accent: #5b8cff; --danger: #ff5d6c; --warn: #ffb020;
+      --ok: #3dd68c; --brand: #7c9cff;
     }
     * { box-sizing: border-box; }
     body {
-      margin: 0;
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
       background: radial-gradient(1200px 600px at 10% -10%, #1a2a4a 0%, var(--bg) 55%);
-      color: var(--text);
-      min-height: 100vh;
+      color: var(--text); min-height: 100vh;
     }
     header {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 1rem 1.5rem; border-bottom: 1px solid var(--border);
-      backdrop-filter: blur(8px); position: sticky; top: 0; background: rgba(11,18,32,.85);
+      display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+      padding: .85rem 1.25rem; border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(8px); position: sticky; top: 0; background: rgba(11,18,32,.9); z-index: 20;
     }
-    header h1 { font-size: 1.1rem; margin: 0; letter-spacing: .02em; }
-    header span { color: var(--muted); font-size: .85rem; }
-    main { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding: 1rem 1.5rem 2rem; }
-    @media (max-width: 960px) { main { grid-template-columns: 1fr; } }
-    .cards { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .75rem; }
+    header h1 { font-size: 1.05rem; margin: 0; }
+    header .sub { color: var(--muted); font-size: .78rem; }
+    header a { color: var(--brand); text-decoration: none; }
+    .layout { display: grid; grid-template-columns: 200px 1fr; min-height: calc(100vh - 120px); }
+    nav {
+      border-right: 1px solid var(--border); padding: .75rem; background: rgba(18,26,43,.6);
+    }
+    nav button {
+      display: block; width: 100%; text-align: left; background: transparent; color: var(--text);
+      border: 0; border-radius: 8px; padding: .55rem .7rem; margin-bottom: .25rem; cursor: pointer;
+      font-size: .85rem;
+    }
+    nav button.active, nav button:hover { background: rgba(91,140,255,.15); color: var(--accent); }
+    main { padding: 1rem 1.25rem 2rem; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: .65rem; margin-bottom: 1rem; }
     .card {
-      background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: .9rem 1rem;
+      background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: .8rem .9rem;
     }
-    .card .label { color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; }
-    .card .value { font-size: 1.6rem; font-weight: 700; margin-top: .25rem; }
+    .card .label { color: var(--muted); font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; }
+    .card .value { font-size: 1.45rem; font-weight: 700; margin-top: .2rem; }
     .card.danger .value { color: var(--danger); }
     .card.warn .value { color: var(--warn); }
     .card.ok .value { color: var(--ok); }
-    section.panel {
-      background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1rem;
-      min-height: 320px; display: flex; flex-direction: column;
+    .panel {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; margin-bottom: 1rem;
     }
-    section h2 { margin: 0 0 .75rem; font-size: 1rem; }
-    .list { overflow: auto; flex: 1; }
+    .panel h2 { margin: 0 0 .75rem; font-size: 1rem; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    @media (max-width: 960px) { .layout { grid-template-columns: 1fr; } .grid2 { grid-template-columns: 1fr; } nav { display: flex; flex-wrap: wrap; gap: .25rem; border-right: 0; border-bottom: 1px solid var(--border); } nav button { width: auto; } }
     .item {
       border: 1px solid var(--border); border-radius: 8px; padding: .7rem .8rem; margin-bottom: .5rem;
-      cursor: pointer; transition: border-color .15s;
     }
-    .item:hover { border-color: var(--accent); }
     .item .meta { color: var(--muted); font-size: .75rem; margin-top: .25rem; }
     .sev { display: inline-block; padding: .1rem .4rem; border-radius: 999px; font-size: .7rem; font-weight: 600; }
     .sev.high, .sev.critical { background: rgba(255,93,108,.15); color: var(--danger); }
     .sev.medium { background: rgba(255,176,32,.15); color: var(--warn); }
     .sev.info, .sev.low { background: rgba(91,140,255,.15); color: var(--accent); }
-    .actions { display: flex; gap: .4rem; margin-top: .5rem; }
-    button {
-      background: var(--accent); color: white; border: 0; border-radius: 6px; padding: .35rem .7rem;
+    .risk-high, .risk-critical { color: var(--danger); font-weight: 700; }
+    .risk-medium { color: var(--warn); font-weight: 600; }
+    .actions { display: flex; gap: .4rem; margin-top: .5rem; flex-wrap: wrap; align-items: center; }
+    button, .btn {
+      background: var(--accent); color: white; border: 0; border-radius: 6px; padding: .4rem .75rem;
       cursor: pointer; font-weight: 600; font-size: .8rem;
     }
-    button.deny { background: var(--danger); }
-    button.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
-    #timeline {
-      grid-column: 1 / -1; background: var(--panel); border: 1px solid var(--border);
-      border-radius: 12px; padding: 1rem; display: none;
+    button.deny, .btn.deny { background: var(--danger); }
+    button.ghost, .btn.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    button.ok { background: var(--ok); color: #062216; }
+    input, textarea, select {
+      background: #0a101c; border: 1px solid var(--border); color: var(--text);
+      border-radius: 6px; padding: .45rem .6rem; font-size: .85rem; width: 100%;
     }
-    #timeline.active { display: block; }
+    textarea { min-height: 280px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .75rem; }
+    pre {
+      background: #0a101c; border-radius: 8px; padding: .6rem; overflow: auto;
+      font-size: .72rem; color: #c9d4ef; max-height: 320px;
+    }
+    .empty { color: var(--muted); padding: 1rem 0; }
     .tl-event {
-      border-left: 2px solid var(--border); padding: .5rem 0 .5rem 1rem; margin-left: .4rem;
-      position: relative;
+      border-left: 2px solid var(--border); padding: .5rem 0 .5rem 1rem; margin-left: .4rem; position: relative;
     }
     .tl-event::before {
       content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
       position: absolute; left: -5px; top: .85rem;
     }
-    pre {
-      background: #0a101c; border-radius: 8px; padding: .6rem; overflow: auto;
-      font-size: .75rem; color: #c9d4ef;
+    .chain { font-size: .72rem; color: var(--muted); margin-top: .3rem; }
+    .chain span { color: var(--text); }
+    footer {
+      border-top: 1px solid var(--border); padding: .75rem 1.25rem; color: var(--muted); font-size: .75rem;
+      display: flex; justify-content: space-between; flex-wrap: wrap; gap: .5rem;
     }
-    .empty { color: var(--muted); padding: 1rem 0; }
+    #login-gate {
+      max-width: 420px; margin: 4rem auto; background: var(--panel); border: 1px solid var(--border);
+      border-radius: 14px; padding: 1.5rem;
+    }
+    #login-gate h2 { margin-top: 0; }
+    .hidden { display: none !important; }
+    .toast {
+      position: fixed; bottom: 1rem; right: 1rem; background: #1c2a44; border: 1px solid var(--border);
+      padding: .7rem 1rem; border-radius: 8px; z-index: 50; display: none;
+    }
+    .row { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+    label { font-size: .8rem; color: var(--muted); display: block; margin-bottom: .25rem; }
+    .field { margin-bottom: .75rem; }
+    .badge { font-size: .65rem; padding: .15rem .4rem; border-radius: 4px; background: rgba(124,156,255,.2); color: var(--brand); }
   </style>
 </head>
 <body>
   <header>
     <div>
-      <h1>PhaseOne10841 — Agent EDR</h1>
-      <span>Defensive gateway dashboard · v0.2</span>
+      <h1>PhaseOne10841 <span class="badge">Agent EDR</span></h1>
+      <div class="sub">A product of <a href="https://VeracityIntegrity.com" target="_blank" rel="noopener">Veracity Integrity LLC</a> · v0.3</div>
     </div>
-    <button class="ghost" onclick="refresh()">Refresh</button>
+    <div class="row">
+      <span class="sub" id="auth-email"></span>
+      <button class="ghost" id="btn-refresh" onclick="refreshAll()">Refresh</button>
+      <button class="ghost" id="btn-logout" onclick="logout()">Logout</button>
+    </div>
   </header>
-  <main>
-    <div class="cards" id="cards"></div>
-    <section class="panel">
-      <h2>Incidents</h2>
-      <div class="list" id="incidents"><div class="empty">Loading…</div></div>
-    </section>
-    <section class="panel">
-      <h2>Approval queue</h2>
-      <div class="list" id="approvals"><div class="empty">Loading…</div></div>
-    </section>
-    <div id="timeline">
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <h2 style="margin:0">Session replay</h2>
-        <button class="ghost" onclick="document.getElementById('timeline').classList.remove('active')">Close</button>
-      </div>
-      <div id="timeline-body"></div>
+
+  <div id="login-gate" class="hidden">
+    <h2>Admin sign-in</h2>
+    <p class="sub">Email one-time code (MFA). Codes are emailed via SMTP when configured; otherwise logged to the server fallback file for local/dev.</p>
+    <div class="field">
+      <label>Work email</label>
+      <input id="login-email" type="email" placeholder="admin@example.com" autocomplete="username" />
     </div>
-  </main>
-  <script>
-    const cardDefs = [
-      ['agents', 'Active agents', ''],
-      ['tool_calls', 'Tool calls', ''],
-      ['shell_commands', 'Shell', ''],
-      ['external_domains', 'Domains', ''],
-      ['blocked_actions', 'Blocked', 'danger'],
-      ['canary_triggers', 'Canaries', 'danger'],
-      ['prompt_injection_hits', 'Prompt inject', 'warn'],
-      ['permission_findings', 'Perm findings', 'warn'],
-      ['a2a_messages', 'A2A msgs', ''],
-      ['a2a_blocks', 'A2A blocks', 'danger'],
-      ['lab_detector_hits', 'Lab hits', ''],
-      ['pending_approvals', 'Approvals', 'warn'],
-      ['sessions', 'Sessions', 'ok'],
-    ];
+    <div class="field hidden" id="code-field">
+      <label>Verification code</label>
+      <input id="login-code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="6-digit code" />
+    </div>
+    <div class="actions">
+      <button id="btn-send-otp" onclick="sendOtp()">Send code</button>
+      <button class="ok hidden" id="btn-verify" onclick="verifyOtp()">Verify &amp; enter</button>
+    </div>
+    <p class="meta" id="login-msg" style="color:var(--muted);font-size:.8rem;margin-top:.75rem;"></p>
+  </div>
 
-    async function refresh() {
-      const [stats, incidents, approvals] = await Promise.all([
-        fetch('/api/stats').then(r => r.json()),
-        fetch('/api/incidents').then(r => r.json()),
-        fetch('/api/approvals').then(r => r.json()),
-      ]);
-      renderCards(stats);
-      renderIncidents(incidents.data || []);
-      renderApprovals(approvals.data || []);
+  <div id="app" class="hidden">
+    <div class="layout">
+      <nav id="nav">
+        <button class="active" data-view="overview">Overview</button>
+        <button data-view="incidents">Incidents</button>
+        <button data-view="approvals">Approvals</button>
+        <button data-view="replay">Session replay</button>
+        <button data-view="agents">Agents</button>
+        <button data-view="canaries">Canaries</button>
+        <button data-view="injections">Injections</button>
+        <button data-view="a2a">A2A trust</button>
+        <button data-view="permissions">Permissions</button>
+        <button data-view="policy">Policy</button>
+        <button data-view="siem">SIEM export</button>
+        <button data-view="lab">Lab monitor</button>
+        <button data-view="settings">Settings</button>
+      </nav>
+      <main>
+        <section id="view-overview" class="view">
+          <div class="cards" id="cards"></div>
+          <div class="grid2">
+            <div class="panel"><h2>Recent incidents</h2><div id="overview-incidents"></div></div>
+            <div class="panel"><h2>Pending approvals</h2><div id="overview-approvals"></div></div>
+          </div>
+        </section>
+
+        <section id="view-incidents" class="view hidden">
+          <div class="panel"><h2>Incidents</h2><div id="incidents-list"></div></div>
+        </section>
+
+        <section id="view-approvals" class="view hidden">
+          <div class="panel">
+            <h2>Human approval queue</h2>
+            <p class="sub">Review destructive actions: reason, agent, tool, risk. Optional note on resolve. Gateway wait/poll respects approval timeout policy.</p>
+            <div id="approvals-list"></div>
+          </div>
+        </section>
+
+        <section id="view-replay" class="view hidden">
+          <div class="panel">
+            <h2>Session replay</h2>
+            <div class="row field">
+              <input id="replay-session" placeholder="Session UUID" style="max-width:360px" />
+              <input id="replay-agent" placeholder="Filter agent_id (optional)" style="max-width:220px" />
+              <button onclick="loadReplay()">Load</button>
+              <button class="ghost" onclick="downloadReplay()">Download JSONL</button>
+            </div>
+            <div id="replay-body"></div>
+          </div>
+        </section>
+
+        <section id="view-agents" class="view hidden">
+          <div class="panel"><h2>Agents</h2><div id="agents-list"></div></div>
+          <div class="panel"><h2>Sessions</h2><div id="sessions-list"></div></div>
+        </section>
+
+        <section id="view-canaries" class="view hidden">
+          <div class="panel"><h2>Canary management</h2><div id="canaries-list"></div></div>
+          <div class="panel"><h2>Canary / secret hits</h2><div id="canary-hits"></div></div>
+        </section>
+
+        <section id="view-injections" class="view hidden">
+          <div class="panel"><h2>Prompt-injection hits</h2><div id="injection-hits"></div></div>
+        </section>
+
+        <section id="view-a2a" class="view hidden">
+          <div class="panel">
+            <h2>A2A trust admin</h2>
+            <div class="row field">
+              <input id="a2a-agent" placeholder="agent_id" style="max-width:220px" />
+              <select id="a2a-trust" style="max-width:200px">
+                <option>LOCAL-TRUSTED</option>
+                <option>LOCAL-UNTRUSTED</option>
+                <option>REMOTE-VERIFIED</option>
+                <option>QUARANTINED</option>
+                <option>clear</option>
+              </select>
+              <button onclick="setA2ATrust()">Update trust</button>
+            </div>
+            <pre id="a2a-policy"></pre>
+            <h3 style="font-size:.9rem">A2A events</h3>
+            <div id="a2a-events"></div>
+          </div>
+        </section>
+
+        <section id="view-permissions" class="view hidden">
+          <div class="panel"><h2>Permission findings</h2><div id="perm-report"></div></div>
+        </section>
+
+        <section id="view-policy" class="view hidden">
+          <div class="panel">
+            <h2>Policy viewer / editor</h2>
+            <p class="sub">Safe YAML editor — only known policy keys accepted. Dry-run validates before save.</p>
+            <div class="actions" style="margin-bottom:.5rem">
+              <button class="ghost" onclick="loadPolicy()">Reload</button>
+              <button class="ghost" onclick="dryRunPolicy()">Dry-run validate</button>
+              <button onclick="savePolicy()">Save policy</button>
+            </div>
+            <textarea id="policy-yaml" spellcheck="false"></textarea>
+            <pre id="policy-msg"></pre>
+          </div>
+        </section>
+
+        <section id="view-siem" class="view hidden">
+          <div class="panel">
+            <h2>SIEM / export</h2>
+            <p class="sub">ECS-ish JSONL for Splunk/Elastic. Optional webhook sink.</p>
+            <div class="actions">
+              <button onclick="downloadEvents()">Download events JSONL</button>
+              <button class="ghost" onclick="previewExport()">Preview sample</button>
+            </div>
+            <div class="field" style="margin-top:1rem">
+              <label>Webhook URL (optional override)</label>
+              <input id="webhook-url" placeholder="https://siem.example/hooks/phaseone" />
+            </div>
+            <button onclick="sendWebhook()">Send webhook now</button>
+            <pre id="siem-out"></pre>
+          </div>
+        </section>
+
+        <section id="view-lab" class="view hidden">
+          <div class="panel">
+            <h2>Lab monitor status</h2>
+            <p class="sub">Defensive detector harness — inert fixtures only. Run <code>npm run lab</code> locally.</p>
+            <div id="lab-hits"></div>
+          </div>
+        </section>
+
+        <section id="view-settings" class="view hidden">
+          <div class="panel">
+            <h2>Settings &amp; health</h2>
+            <pre id="settings-out"></pre>
+            <p class="sub">MFA: set <code>PHASEONE_ADMIN_EMAILS</code>, optional SMTP_*, or use OTP fallback file for local/dev. See README.</p>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <footer>
+    <div>PhaseOne10841 Agent Security Gateway / Agent EDR · Defensive only</div>
+    <div><a href="https://VeracityIntegrity.com" target="_blank" rel="noopener">VeracityIntegrity.com</a> · Veracity Integrity LLC</div>
+  </footer>
+  <div class="toast" id="toast"></div>
+
+<script>
+  let csrf = null;
+  let currentView = 'overview';
+
+  const cardDefs = [
+    ['agents', 'Active agents', ''],
+    ['tool_calls', 'Tool calls', ''],
+    ['shell_commands', 'Shell', ''],
+    ['external_domains', 'Domains', ''],
+    ['blocked_actions', 'Blocked', 'danger'],
+    ['canary_triggers', 'Canaries', 'danger'],
+    ['secret_hits', 'Secrets', 'danger'],
+    ['prompt_injection_hits', 'Injections', 'warn'],
+    ['permission_findings', 'Perm findings', 'warn'],
+    ['a2a_messages', 'A2A msgs', ''],
+    ['a2a_blocks', 'A2A blocks', 'danger'],
+    ['mcp_calls', 'MCP', ''],
+    ['lab_detector_hits', 'Lab hits', ''],
+    ['pending_approvals', 'Approvals', 'warn'],
+    ['sessions', 'Sessions', 'ok'],
+  ];
+
+  function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg; el.style.display = 'block';
+    setTimeout(() => el.style.display = 'none', 3200);
+  }
+
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  async function api(path, opts = {}) {
+    const headers = { 'content-type': 'application/json', ...(opts.headers || {}) };
+    if (csrf && opts.method && opts.method !== 'GET') headers['x-csrf-token'] = csrf;
+    const res = await fetch(path, { ...opts, headers, credentials: 'same-origin' });
+    const ct = res.headers.get('content-type') || '';
+    if (ct.includes('json')) {
+      const data = await res.json().catch(() => ({}));
+      return { res, data };
     }
+    const text = await res.text();
+    return { res, data: text };
+  }
 
-    function renderCards(stats) {
-      const el = document.getElementById('cards');
-      el.innerHTML = cardDefs.map(([key, label, cls]) => `
-        <div class="card ${cls}">
-          <div class="label">${label}</div>
-          <div class="value">${stats[key] ?? 0}</div>
-        </div>`).join('');
+  async function checkAuth() {
+    const { data } = await api('/api/auth/status');
+    if (!data.enabled) {
+      showApp('auth-disabled@local');
+      return true;
     }
-
-    function renderIncidents(items) {
-      const el = document.getElementById('incidents');
-      if (!items.length) { el.innerHTML = '<div class="empty">No incidents yet.</div>'; return; }
-      el.innerHTML = items.map(i => `
-        <div class="item" onclick="openTimeline('${i.session_id}')">
-          <div><span class="sev ${i.severity}">${i.severity}</span> <strong>${i.event_type}</strong>
-            ${i.tool_name ? '· ' + i.tool_name : ''}</div>
-          <div class="meta">${i.decision_reason || ''} · agent ${i.agent_id} · ${i.timestamp || ''}</div>
-        </div>`).join('');
+    if (data.authenticated) {
+      csrf = data.csrf;
+      showApp(data.email);
+      return true;
     }
+    document.getElementById('login-gate').classList.remove('hidden');
+    document.getElementById('app').classList.add('hidden');
+    document.getElementById('btn-logout').classList.add('hidden');
+    document.getElementById('btn-refresh').classList.add('hidden');
+    return false;
+  }
 
-    function renderApprovals(items) {
-      const el = document.getElementById('approvals');
-      if (!items.length) { el.innerHTML = '<div class="empty">No pending approvals.</div>'; return; }
-      el.innerHTML = items.map(a => `
-        <div class="item">
-          <div><strong>${a.action_type}</strong> · ${a.status}</div>
-          <div class="meta">${a.reason || ''} · ${a.agent_id} · ${a.created_at || ''}</div>
-          ${a.status === 'pending' ? `<div class="actions">
+  function showApp(email) {
+    document.getElementById('login-gate').classList.add('hidden');
+    document.getElementById('app').classList.remove('hidden');
+    document.getElementById('btn-logout').classList.remove('hidden');
+    document.getElementById('btn-refresh').classList.remove('hidden');
+    document.getElementById('auth-email').textContent = email || '';
+  }
+
+  async function sendOtp() {
+    const email = document.getElementById('login-email').value.trim();
+    const { res, data } = await api('/api/auth/request-otp', { method: 'POST', body: JSON.stringify({ email }) });
+    document.getElementById('login-msg').textContent = data.message || data.error || '';
+    if (res.ok) {
+      document.getElementById('code-field').classList.remove('hidden');
+      document.getElementById('btn-verify').classList.remove('hidden');
+    }
+  }
+
+  async function verifyOtp() {
+    const email = document.getElementById('login-email').value.trim();
+    const code = document.getElementById('login-code').value.trim();
+    const { res, data } = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, code }) });
+    if (!res.ok) {
+      document.getElementById('login-msg').textContent = data.error || 'login failed';
+      return;
+    }
+    csrf = data.csrf;
+    showApp(data.email);
+    await refreshAll();
+  }
+
+  async function logout() {
+    await api('/api/auth/logout', { method: 'POST', body: '{}' });
+    csrf = null;
+    location.reload();
+  }
+
+  document.getElementById('nav').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-view]');
+    if (!btn) return;
+    currentView = btn.dataset.view;
+    document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
+    document.getElementById('view-' + currentView).classList.remove('hidden');
+    refreshAll();
+  });
+
+  function renderCards(stats) {
+    document.getElementById('cards').innerHTML = cardDefs.map(([key, label, cls]) => `
+      <div class="card ${cls}"><div class="label">${label}</div><div class="value">${stats[key] ?? 0}</div></div>`).join('');
+  }
+
+  function renderIncidentItems(items, elId) {
+    const el = document.getElementById(elId);
+    if (!items.length) { el.innerHTML = '<div class="empty">None yet.</div>'; return; }
+    el.innerHTML = items.map(i => `
+      <div class="item" style="cursor:pointer" onclick="openReplay('${i.session_id}')">
+        <div><span class="sev ${i.severity}">${i.severity}</span> <strong>${escapeHtml(i.event_type)}</strong>
+          ${i.tool_name ? '· ' + escapeHtml(i.tool_name) : ''}</div>
+        <div class="meta">${escapeHtml(i.decision_reason || '')} · ${escapeHtml(i.agent_id)} · ${escapeHtml(i.timestamp || '')}</div>
+      </div>`).join('');
+  }
+
+  function renderApprovals(items, elId) {
+    const el = document.getElementById(elId);
+    if (!items.length) { el.innerHTML = '<div class="empty">No pending approvals.</div>'; return; }
+    el.innerHTML = items.map(a => {
+      const payload = a.payload || {};
+      const tool = payload.tool || a.action_type;
+      const risk = a.risk || 'medium';
+      return `
+      <div class="item">
+        <div><strong>${escapeHtml(tool)}</strong> · <span class="risk-${risk}">risk ${escapeHtml(risk)}</span> · ${escapeHtml(a.status)}</div>
+        <div class="meta"><strong>Reason:</strong> ${escapeHtml(a.reason || '—')}</div>
+        <div class="meta">Agent <strong>${escapeHtml(a.agent_id)}</strong> · session ${escapeHtml(a.session_id)} · expires ${escapeHtml(a.expires_at || '—')}</div>
+        <div class="meta">Args: <code>${escapeHtml(JSON.stringify(payload.args || payload).slice(0, 180))}</code></div>
+        ${a.status === 'pending' ? `
+          <div class="actions">
+            <input id="note-${a.id}" placeholder="Optional note" style="max-width:220px" />
             <button onclick="resolveApproval('${a.id}','approve')">Approve</button>
             <button class="deny" onclick="resolveApproval('${a.id}','deny')">Deny</button>
+            <button class="ghost" onclick="openReplay('${a.session_id}')">Replay</button>
           </div>` : ''}
-        </div>`).join('');
+      </div>`;
+    }).join('');
+  }
+
+  async function resolveApproval(id, action) {
+    const note = document.getElementById('note-' + id)?.value || '';
+    const { res, data } = await api('/api/approvals/' + id + '/' + action, {
+      method: 'POST', body: JSON.stringify({ note, resolution_note: note }),
+    });
+    toast(res.ok ? action + 'd' : (data.error || 'failed'));
+    refreshAll();
+  }
+
+  function openReplay(sessionId) {
+    document.querySelector('#nav button[data-view="replay"]').click();
+    document.getElementById('replay-session').value = sessionId;
+    loadReplay();
+  }
+
+  async function loadReplay() {
+    const id = document.getElementById('replay-session').value.trim();
+    const agent = document.getElementById('replay-agent').value.trim();
+    if (!id) return;
+    const q = agent ? '?agent_id=' + encodeURIComponent(agent) : '';
+    const { data } = await api('/api/sessions/' + id + '/replay' + q);
+    const steps = data.steps || [];
+    const body = document.getElementById('replay-body');
+    if (!steps.length) { body.innerHTML = '<div class="empty">No events</div>'; return; }
+    body.innerHTML = `<p class="meta">Session ${escapeHtml(id)} · ${steps.length} steps</p>` + steps.map(s => `
+      <div class="tl-event">
+        <div><span class="sev ${s.severity}">${s.severity}</span> <strong>#${s.index} ${escapeHtml(s.event_type)}</strong>
+          ${s.decision ? '· ' + escapeHtml(s.decision) : ''}</div>
+        <div class="chain">
+          agent <span>${escapeHtml(s.chain.agent)}</span>
+          → tool <span>${escapeHtml(s.chain.tool || '—')}</span>
+          → args <span>${escapeHtml(JSON.stringify(s.chain.args ?? null).slice(0,120))}</span>
+          → dest <span>${escapeHtml(s.chain.dest || '—')}</span>
+          → result <span>${escapeHtml(JSON.stringify(s.chain.result ?? null).slice(0,80))}</span>
+          → next <span>${escapeHtml(s.chain.next || 'end')}</span>
+        </div>
+        <div class="meta">${escapeHtml(s.timestamp || '')} · ${escapeHtml(s.decision_reason || '')}</div>
+      </div>`).join('');
+  }
+
+  function downloadReplay() {
+    const id = document.getElementById('replay-session').value.trim();
+    if (!id) return;
+    window.open('/api/sessions/' + id + '/export.jsonl', '_blank');
+  }
+
+  async function loadPolicy() {
+    const { data } = await api('/api/policy/raw');
+    document.getElementById('policy-yaml').value = data.yaml || '';
+    document.getElementById('a2a-policy').textContent = JSON.stringify(data.parsed?.a2a || {}, null, 2);
+  }
+
+  async function dryRunPolicy() {
+    const yaml = document.getElementById('policy-yaml').value;
+    const { data } = await api('/api/policy', { method: 'PUT', body: JSON.stringify({ yaml, dry_run: true }) });
+    document.getElementById('policy-msg').textContent = JSON.stringify(data, null, 2);
+  }
+
+  async function savePolicy() {
+    const yaml = document.getElementById('policy-yaml').value;
+    const { data } = await api('/api/policy', { method: 'PUT', body: JSON.stringify({ yaml, dry_run: false }) });
+    document.getElementById('policy-msg').textContent = JSON.stringify(data, null, 2);
+    toast(data.ok ? 'Policy saved' : (data.error || 'save failed'));
+  }
+
+  async function setA2ATrust() {
+    const agent_id = document.getElementById('a2a-agent').value.trim();
+    const trust = document.getElementById('a2a-trust').value;
+    const { data } = await api('/api/a2a/trust', { method: 'POST', body: JSON.stringify({ agent_id, trust, persist: true }) });
+    document.getElementById('a2a-policy').textContent = JSON.stringify(data.a2a || data, null, 2);
+    toast(data.ok ? 'Trust updated' : (data.error || 'failed'));
+  }
+
+  function downloadEvents() {
+    window.open('/api/export/events.jsonl?limit=500', '_blank');
+  }
+
+  async function previewExport() {
+    const { data } = await api('/api/export/preview');
+    document.getElementById('siem-out').textContent = JSON.stringify(data, null, 2);
+  }
+
+  async function sendWebhook() {
+    const url = document.getElementById('webhook-url').value.trim();
+    const { data } = await api('/api/export/webhook', { method: 'POST', body: JSON.stringify(url ? { url } : {}) });
+    document.getElementById('siem-out').textContent = JSON.stringify(data, null, 2);
+    toast(data.ok ? 'Webhook sent' : (data.error || 'failed'));
+  }
+
+  async function refreshAll() {
+    const authed = await checkAuth();
+    if (!authed && document.getElementById('login-gate') && !document.getElementById('login-gate').classList.contains('hidden')) {
+      // still on login
+      const st = await api('/api/auth/status');
+      if (st.data.enabled === false) { /* continue */ } else if (!st.data.authenticated) return;
     }
 
-    async function openTimeline(sessionId) {
-      const data = await fetch('/api/sessions/' + sessionId + '/timeline').then(r => r.json());
-      const box = document.getElementById('timeline');
-      const body = document.getElementById('timeline-body');
-      box.classList.add('active');
-      body.innerHTML = `<p class="meta">Session ${sessionId}</p>` +
-        (data.events || []).map(e => `
-          <div class="tl-event">
-            <div><span class="sev ${e.severity}">${e.severity}</span> <strong>${e.event_type}</strong>
-              ${e.decision ? '· ' + e.decision : ''}</div>
-            <div class="meta">${e.timestamp || ''} · ${e.decision_reason || ''}</div>
-            ${e.tool_args ? '<pre>' + escapeHtml(JSON.stringify(e.tool_args, null, 2)) + '</pre>' : ''}
-          </div>`).join('') || '<div class="empty">No events</div>';
-      box.scrollIntoView({ behavior: 'smooth' });
+    const [{ data: stats }, { data: incidents }, { data: approvals }] = await Promise.all([
+      api('/api/stats'),
+      api('/api/incidents'),
+      api('/api/approvals'),
+    ]);
+    if (stats && !stats.error) renderCards(stats);
+    const inc = incidents?.data || [];
+    const appr = approvals?.data || [];
+    renderIncidentItems(inc.slice(0, 8), 'overview-incidents');
+    renderApprovals(appr.slice(0, 5), 'overview-approvals');
+    renderIncidentItems(inc, 'incidents-list');
+    renderApprovals(appr, 'approvals-list');
+
+    if (currentView === 'agents' || currentView === 'overview') {
+      const [ag, sess] = await Promise.all([api('/api/agents'), api('/api/sessions')]);
+      const agents = ag.data?.data || [];
+      const sessions = sess.data?.data || [];
+      document.getElementById('agents-list').innerHTML = agents.length
+        ? agents.map(a => `<div class="item"><strong>${escapeHtml(a.id)}</strong><div class="meta">last seen ${escapeHtml(a.last_seen_at || '')}</div></div>`).join('')
+        : '<div class="empty">No agents yet.</div>';
+      document.getElementById('sessions-list').innerHTML = sessions.length
+        ? sessions.map(s => `<div class="item" style="cursor:pointer" onclick="openReplay('${s.id}')"><strong>${escapeHtml(s.id)}</strong><div class="meta">${escapeHtml(s.agent_id)} · ${escapeHtml(s.started_at || '')}</div></div>`).join('')
+        : '<div class="empty">No sessions yet.</div>';
     }
 
-    async function resolveApproval(id, action) {
-      await fetch('/api/approvals/' + id + '/' + action, { method: 'POST' });
-      refresh();
+    if (currentView === 'canaries') {
+      const { data } = await api('/api/canaries');
+      const files = data.files || [];
+      document.getElementById('canaries-list').innerHTML = files.map(f =>
+        `<div class="item"><strong>${escapeHtml(f.name || f.id || 'canary')}</strong><div class="meta">${escapeHtml(JSON.stringify(f).slice(0,200))}</div></div>`
+      ).join('') || '<div class="empty">No canaries</div>';
+      const hits = await api('/api/events?event_type=canary.trigger&limit=30');
+      renderIncidentItems(hits.data?.data || [], 'canary-hits');
     }
 
-    function escapeHtml(s) {
-      return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    if (currentView === 'injections') {
+      const hits = await api('/api/events?event_type=prompt_injection.detected&limit=50');
+      const blocked = await api('/api/events?event_type=prompt_injection.blocked&limit=50');
+      renderIncidentItems([...(blocked.data?.data||[]), ...(hits.data?.data||[])], 'injection-hits');
     }
 
-    refresh();
-    setInterval(refresh, 8000);
-  </script>
+    if (currentView === 'a2a') {
+      await loadPolicy();
+      const ev = await api('/api/events?event_type=a2a.message&limit=30');
+      const bl = await api('/api/events?event_type=a2a.blocked&limit=30');
+      renderIncidentItems([...(bl.data?.data||[]), ...(ev.data?.data||[])], 'a2a-events');
+    }
+
+    if (currentView === 'permissions') {
+      const { data } = await api('/api/permissions');
+      document.getElementById('perm-report').innerHTML = `<pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+    }
+
+    if (currentView === 'policy') await loadPolicy();
+
+    if (currentView === 'lab') {
+      const hits = await api('/api/events?event_type=lab.detector_hit&limit=40');
+      renderIncidentItems(hits.data?.data || [], 'lab-hits');
+    }
+
+    if (currentView === 'settings') {
+      const { data } = await api('/api/health/detail');
+      const auth = await api('/api/auth/status');
+      document.getElementById('settings-out').textContent = JSON.stringify({ health: data, auth: auth.data }, null, 2);
+    }
+  }
+
+  checkAuth().then((ok) => { if (ok) refreshAll(); });
+  setInterval(() => {
+    if (!document.getElementById('app').classList.contains('hidden')) refreshAll();
+  }, 10000);
+</script>
 </body>
 </html>

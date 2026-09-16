@@ -1,11 +1,21 @@
 {
   "name": "phaseone-core",
-  "version": "0.2.0",
-  "description": "PhaseOne10841 — Defensive Agent Security Gateway (Agent EDR foundation)",
+  "version": "0.3.0",
+  "description": "PhaseOne10841 — Defensive Agent Security Gateway (Agent EDR) by Veracity Integrity LLC",
   "private": true,
   "type": "module",
+  "author": "Veracity Integrity LLC <https://VeracityIntegrity.com>",
+  "homepage": "https://VeracityIntegrity.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/veracityintegrity/phaseone10841"
+  },
+  "bugs": {
+    "url": "https://VeracityIntegrity.com"
+  },
   "scripts": {
     "build": "tsc",
+    "onboard": "tsx scripts/onboard.ts",
     "dev:gateway": "tsx watch gateway/src/index.ts",
     "dev:dashboard": "tsx watch dashboard/src/server.ts",
     "start:gateway": "node dist/gateway/src/index.js",
@@ -34,5 +44,12 @@
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "keywords": [
+    "agent-security",
+    "agent-edr",
+    "defensive",
+    "phaseone10841",
+    "veracity-integrity"
+  ]
 }
