@@ -1,5 +1,14 @@
-# PhaseOne10841 v0.5 — production-ish local profile
+# PhaseOne10841 v0.5.1 — production-ish local profile
 # Veracity Integrity LLC · https://VeracityIntegrity.com
+#
+# Mock-first upstream:
+#   Default UPSTREAM_PROVIDER=mock. Bring the stack up, confirm /healthz + /readyz,
+#   then switch (env or overlay) and recreate gateway:
+#     UPSTREAM_PROVIDER=ollama docker compose up -d --force-recreate gateway
+#     docker compose -f docker-compose.yml -f docker-compose.upstream-ollama.yml up -d --force-recreate gateway
+# Optional TLS edge (after base healthy):
+#   docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d
+#   See docs/proxy.md
 #
 # Resource limits (optional notes for operators):
 #   Uncomment deploy.resources below under Swarm/Compose v3+, or use
@@ -41,6 +50,7 @@ services:
     environment:
       DATABASE_URL: postgres://phaseone:phaseone@postgres:5432/phaseone
       GATEWAY_PORT: "8080"
+      # Keep mock until health green — see header comment / docs/RECOMMENDATIONS.md #2
       UPSTREAM_PROVIDER: ${UPSTREAM_PROVIDER:-mock}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
@@ -99,7 +109,7 @@ services:
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
-      SMTP_FROM: ${SMTP_FROM:-noreply@veracityintegrity.com}
+      SMTP_FROM: ${SMTP_FROM:-noreply@clovisstar.com}
       SMTP_SECURE: ${SMTP_SECURE:-false}
       NODE_ENV: production
     ports:

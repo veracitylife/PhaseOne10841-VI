@@ -71,7 +71,7 @@ describe('onboard installer', () => {
     const a = defaultAnswers({ useSmtp: false, smtpHost: '' });
     const env = renderEnv(a);
     expect(env).toContain('# SMTP_HOST=');
-    expect(env).toContain('SMTP_FROM=');
+    expect(env).toContain('SMTP_FROM=noreply@clovisstar.com');
   });
 
   it('writeEnvFile creates file', () => {
@@ -81,5 +81,25 @@ describe('onboard installer', () => {
     });
     expect(result.wrote).toBe(true);
     expect(readFileSync(target, 'utf8')).toContain('ci@localhost');
+  });
+
+  it('defaults use Clovis Star SMTP From and never write change-me secret', async () => {
+    const out = join(dir, '.env.clovis');
+    const code = await main(['--defaults', '--out', out], dir);
+    expect(code).toBe(0);
+    const body = readFileSync(out, 'utf8');
+    expect(body).toContain('SMTP_FROM=noreply@clovisstar.com');
+    expect(body).not.toMatch(/PHASEONE_SESSION_SECRET=.*change-me/);
+    expect(body).toMatch(/PHASEONE_SESSION_SECRET=[a-f0-9]{64}/);
+  });
+
+  it('never preserves env change-me secret on --defaults', async () => {
+    process.env.PHASEONE_SESSION_SECRET = 'change-me-run-onboard-to-generate';
+    const out = join(dir, '.env.weak-env');
+    const code = await main(['--defaults', '--out', out], dir);
+    expect(code).toBe(0);
+    const body = readFileSync(out, 'utf8');
+    expect(body).not.toMatch(/PHASEONE_SESSION_SECRET=.*change-me/);
+    expect(body).toMatch(/PHASEONE_SESSION_SECRET=[a-f0-9]{64}/);
   });
 });

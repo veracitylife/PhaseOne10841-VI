@@ -133,13 +133,13 @@ describe('onboard Phase 5 env', () => {
 });
 
 describe('version & docs artifacts', () => {
-  it('config productVersion is 0.5.0', () => {
-    expect(loadConfig().productVersion).toBe('0.5.0');
+  it('config productVersion is 0.5.1', () => {
+    expect(loadConfig().productVersion).toBe('0.5.1');
   });
 
-  it('package.json is 0.5.0', () => {
+  it('package.json is 0.5.1', () => {
     const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'));
-    expect(pkg.version).toBe('0.5.0');
+    expect(pkg.version).toBe('0.5.1');
     expect(pkg.scripts.smoke).toBeTruthy();
     expect(pkg.scripts.retention).toBeTruthy();
     expect(pkg.scripts.backup).toBeTruthy();
@@ -152,7 +152,7 @@ describe('version & docs artifacts', () => {
     expect(body).toContain('/healthz');
     expect(body).toContain('/v1/chat/completions');
     expect(body).toContain('/v1/phaseone/ops');
-    expect(body).toContain('0.5.0');
+    expect(body).toContain('0.5.1');
     expect(body).toContain('Veracity Integrity');
   });
 
@@ -176,4 +176,16 @@ describe('version & docs artifacts', () => {
     expect(compose).toContain('user: "1000:1000"');
     expect(compose).toContain('PHASEONE_RETENTION_DAYS');
   });
+
+  it('proxy.md and RECOMMENDATIONS.md exist with approved 1-9', () => {
+    const rec = readFileSync(join(process.cwd(), 'docs/RECOMMENDATIONS.md'), 'utf8');
+    expect(rec).toContain('## 1. Onboard / session secret');
+    expect(rec).toContain('## 9. Admin allowlist + MFA email');
+    expect(rec).toContain('noreply@clovisstar.com');
+    expect(existsSync(join(process.cwd(), 'docs/proxy.md'))).toBe(true);
+    expect(existsSync(join(process.cwd(), 'docker-compose.proxy.yml'))).toBe(true);
+    expect(existsSync(join(process.cwd(), '.github/dependabot.yml'))).toBe(true);
+    expect(existsSync(join(process.cwd(), 'scripts/windows/Register-PhaseOneScheduledTasks.ps1'))).toBe(true);
+  });
 });
+

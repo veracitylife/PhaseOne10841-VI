@@ -1,6 +1,11 @@
-# Usage (after base stack is healthy):
+# PhaseOne10841 — Caddy TLS edge overlay
+# Veracity Integrity LLC · https://VeracityIntegrity.com
+#
+# Prerequisites: base stack healthy (docker compose up), then:
 #   docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d
-# Then open https://phaseone.localhost (trust Caddy local CA once)
+# Docs: docs/proxy.md
+# URLs: https://phaseone.localhost  ·  https://gateway.phaseone.localhost
+# Set PHASEONE_SECURE_COOKIES=true when using HTTPS.
 services:
   caddy:
     image: caddy:2-alpine

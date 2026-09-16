@@ -86,3 +86,37 @@ Compose profile includes:
 ## OpenAPI
 
 See [`docs/openapi.yaml`](./openapi.yaml) — linked from the main README.
+
+
+## Mock-first upstream
+
+Default `UPSTREAM_PROVIDER=mock`. After compose health is green:
+
+```bash
+curl -s http://localhost:8080/healthz
+curl -s http://localhost:8080/readyz
+# Option A — env override
+UPSTREAM_PROVIDER=ollama docker compose up -d --force-recreate gateway
+# Option B — compose overlay
+docker compose -f docker-compose.yml -f docker-compose.upstream-ollama.yml up -d --force-recreate gateway
+```
+
+See [RECOMMENDATIONS.md](./RECOMMENDATIONS.md) item 2.
+
+## TLS edge (Caddy)
+
+See [proxy.md](./proxy.md). Overlay:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d
+```
+
+## Windows scheduled backup / retention
+
+As Administrator, once:
+
+```powershell
+.\scripts\windows\Register-PhaseOneScheduledTasks.ps1
+```
+
+Registers daily 2am tasks for `scripts/backup.sh` and `npm run retention`.

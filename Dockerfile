@@ -1,4 +1,4 @@
-# PhaseOne10841 v0.5 — Veracity Integrity LLC
+# PhaseOne10841 v0.5.1 — Veracity Integrity LLC
 FROM node:20-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./

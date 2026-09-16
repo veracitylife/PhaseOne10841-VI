@@ -108,4 +108,27 @@ describe('auth OTP (harness, no SMTP)', () => {
     expect(canMutate(verified.session!.role)).toBe(false);
   });
 
+  it('PHASEONE_VIEWER_EMAILS supports multiple comma-separated addresses', async () => {
+    process.env.PHASEONE_ADMIN_EMAILS = 'admin@veracityintegrity.com';
+    process.env.PHASEONE_VIEWER_EMAILS = 'viewer1@example.com, viewer2@example.com';
+    __testResetAuthState();
+    const cfg = loadAuthConfig();
+    expect(cfg.viewerAllowlist).toEqual(['viewer1@example.com', 'viewer2@example.com']);
+    expect(isEmailAllowlisted('viewer2@example.com', cfg)).toBe(true);
+    expect(isEmailAllowlisted('stranger@example.com', cfg)).toBe(false);
+    await requestOtp('viewer2@example.com', cfg);
+    const code = __testGetLastOtp()!.code;
+    const verified = verifyOtp('viewer2@example.com', code, cfg);
+    expect(verified.session?.role).toBe('viewer');
+    expect(canMutate('viewer')).toBe(false);
+  });
+
+  it('defaults SMTP From to noreply@clovisstar.com when unset', () => {
+    delete process.env.SMTP_FROM;
+    process.env.SMTP_HOST = 'smtp.example.com';
+    const cfg = loadAuthConfig();
+    expect(cfg.smtp?.from).toBe('noreply@clovisstar.com');
+    delete process.env.SMTP_HOST;
+  });
+
 });

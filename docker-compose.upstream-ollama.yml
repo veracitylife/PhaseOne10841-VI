@@ -1,0 +1,16 @@
+# PhaseOne10841 — optional upstream overlay (after mock health is green)
+# Veracity Integrity LLC · https://VeracityIntegrity.com
+#
+# Mock-first: start with base compose (UPSTREAM_PROVIDER=mock). When /healthz
+# and /readyz are green, switch Ollama with:
+#   docker compose -f docker-compose.yml -f docker-compose.upstream-ollama.yml \
+#     up -d --force-recreate gateway
+#
+# Or without this file:
+#   UPSTREAM_PROVIDER=ollama docker compose up -d --force-recreate gateway
+#
+# OpenAI / OpenRouter: set UPSTREAM_PROVIDER (+ API keys) in .env instead.
+services:
+  gateway:
+    environment:
+      UPSTREAM_PROVIDER: ollama

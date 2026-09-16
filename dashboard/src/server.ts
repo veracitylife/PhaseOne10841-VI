@@ -21,6 +21,7 @@ import {
   __testGetLastOtp,
 } from './auth.js';
 import { canMutate, type DashboardRole } from '../../shared/src/rbac.js';
+import { warnIfWeakSessionSecret } from '../../shared/src/session-secret.js';
 import { recordAudit } from '../../shared/src/audit.js';
 import {
   SECURITY_HEADERS,
@@ -31,7 +32,7 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const GATEWAY_URL = process.env.GATEWAY_URL ?? 'http://gateway:8080';
 const PORT = Number(process.env.DASHBOARD_PORT ?? 3000);
-const VERSION = '0.5.0';
+const VERSION = '0.5.1';
 
 const app = new Hono();
 const authCfg = loadAuthConfig();
@@ -434,6 +435,13 @@ app.get('/', (c) => {
   return c.html(html);
 });
 
+warnIfWeakSessionSecret(process.env.PHASEONE_SESSION_SECRET);
+if (!process.env.SMTP_HOST) {
+  console.warn(
+    '[PhaseOne MFA] ⚠ LAB-ONLY: SMTP_HOST unset — OTP falls back to console/file. '
+      + 'Set SMTP_* (From: noreply@clovisstar.com) before shared/production use.'
+  );
+}
 console.log(`PhaseOne10841 Admin Console v${VERSION} — Veracity Integrity LLC`);
 console.log(
   `Dashboard on :${PORT} (gateway=${GATEWAY_URL}) auth=${authCfg.enabled} · https://VeracityIntegrity.com`

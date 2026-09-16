@@ -8,6 +8,13 @@ logsource:
   product: PhaseOne10841
 detection:
   selection:
-    tool_name: shell_exec
+    # Match common shell tool ids used by agents / policy (tune to your fleet)
+    tool_name:
+      - run_shell
+      - shell_exec
+      - unrestricted_shell
+      - raw_shell
+      - bash
+      - Shell
     decision: deny
   condition: selection

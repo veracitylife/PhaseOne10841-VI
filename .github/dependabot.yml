@@ -1,7 +1,38 @@
+# PhaseOne10841 — Dependabot (npm + Docker + Actions)
+# Also enable GitHub secret scanning / push protection on the private repo:
+#   Settings → Code security and analysis → Secret scanning (+ push protection)
 version: 2
 updates:
   - package-ecosystem: npm
     directory: "/"
     schedule:
       interval: weekly
+      day: monday
     open-pull-requests-limit: 10
+    labels:
+      - dependencies
+    groups:
+      production-deps:
+        dependency-type: production
+      development-deps:
+        dependency-type: development
+
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - docker
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
