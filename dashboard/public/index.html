@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PhaseOne10841 — Agent EDR</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: #121a2b;
+      --border: #243049;
+      --text: #e8eefc;
+      --muted: #9aa8c7;
+      --accent: #5b8cff;
+      --danger: #ff5d6c;
+      --warn: #ffb020;
+      --ok: #3dd68c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: radial-gradient(1200px 600px at 10% -10%, #1a2a4a 0%, var(--bg) 55%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 1rem 1.5rem; border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(8px); position: sticky; top: 0; background: rgba(11,18,32,.85);
+    }
+    header h1 { font-size: 1.1rem; margin: 0; letter-spacing: .02em; }
+    header span { color: var(--muted); font-size: .85rem; }
+    main { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding: 1rem 1.5rem 2rem; }
+    @media (max-width: 960px) { main { grid-template-columns: 1fr; } }
+    .cards { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .75rem; }
+    .card {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: .9rem 1rem;
+    }
+    .card .label { color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; }
+    .card .value { font-size: 1.6rem; font-weight: 700; margin-top: .25rem; }
+    .card.danger .value { color: var(--danger); }
+    .card.warn .value { color: var(--warn); }
+    .card.ok .value { color: var(--ok); }
+    section.panel {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1rem;
+      min-height: 320px; display: flex; flex-direction: column;
+    }
+    section h2 { margin: 0 0 .75rem; font-size: 1rem; }
+    .list { overflow: auto; flex: 1; }
+    .item {
+      border: 1px solid var(--border); border-radius: 8px; padding: .7rem .8rem; margin-bottom: .5rem;
+      cursor: pointer; transition: border-color .15s;
+    }
+    .item:hover { border-color: var(--accent); }
+    .item .meta { color: var(--muted); font-size: .75rem; margin-top: .25rem; }
+    .sev { display: inline-block; padding: .1rem .4rem; border-radius: 999px; font-size: .7rem; font-weight: 600; }
+    .sev.high, .sev.critical { background: rgba(255,93,108,.15); color: var(--danger); }
+    .sev.medium { background: rgba(255,176,32,.15); color: var(--warn); }
+    .sev.info, .sev.low { background: rgba(91,140,255,.15); color: var(--accent); }
+    .actions { display: flex; gap: .4rem; margin-top: .5rem; }
+    button {
+      background: var(--accent); color: white; border: 0; border-radius: 6px; padding: .35rem .7rem;
+      cursor: pointer; font-weight: 600; font-size: .8rem;
+    }
+    button.deny { background: var(--danger); }
+    button.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    #timeline {
+      grid-column: 1 / -1; background: var(--panel); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1rem; display: none;
+    }
+    #timeline.active { display: block; }
+    .tl-event {
+      border-left: 2px solid var(--border); padding: .5rem 0 .5rem 1rem; margin-left: .4rem;
+      position: relative;
+    }
+    .tl-event::before {
+      content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+      position: absolute; left: -5px; top: .85rem;
+    }
+    pre {
+      background: #0a101c; border-radius: 8px; padding: .6rem; overflow: auto;
+      font-size: .75rem; color: #c9d4ef;
+    }
+    .empty { color: var(--muted); padding: 1rem 0; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>PhaseOne10841 — Agent EDR</h1>
+      <span>Defensive gateway dashboard · v0.1</span>
+    </div>
+    <button class="ghost" onclick="refresh()">Refresh</button>
+  </header>
+  <main>
+    <div class="cards" id="cards"></div>
+    <section class="panel">
+      <h2>Incidents</h2>
+      <div class="list" id="incidents"><div class="empty">Loading…</div></div>
+    </section>
+    <section class="panel">
+      <h2>Approval queue</h2>
+      <div class="list" id="approvals"><div class="empty">Loading…</div></div>
+    </section>
+    <div id="timeline">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h2 style="margin:0">Session replay</h2>
+        <button class="ghost" onclick="document.getElementById('timeline').classList.remove('active')">Close</button>
+      </div>
+      <div id="timeline-body"></div>
+    </div>
+  </main>
+  <script>
+    const cardDefs = [
+      ['agents', 'Active agents', ''],
+      ['tool_calls', 'Tool calls', ''],
+      ['shell_commands', 'Shell', ''],
+      ['external_domains', 'Domains', ''],
+      ['blocked_actions', 'Blocked', 'danger'],
+      ['canary_triggers', 'Canaries', 'danger'],
+      ['prompt_injection_hits', 'Prompt inject', 'warn'],
+      ['a2a_messages', 'A2A', ''],
+      ['pending_approvals', 'Approvals', 'warn'],
+      ['sessions', 'Sessions', 'ok'],
+    ];
+
+    async function refresh() {
+      const [stats, incidents, approvals] = await Promise.all([
+        fetch('/api/stats').then(r => r.json()),
+        fetch('/api/incidents').then(r => r.json()),
+        fetch('/api/approvals').then(r => r.json()),
+      ]);
+      renderCards(stats);
+      renderIncidents(incidents.data || []);
+      renderApprovals(approvals.data || []);
+    }
+
+    function renderCards(stats) {
+      const el = document.getElementById('cards');
+      el.innerHTML = cardDefs.map(([key, label, cls]) => `
+        <div class="card ${cls}">
+          <div class="label">${label}</div>
+          <div class="value">${stats[key] ?? 0}</div>
+        </div>`).join('');
+    }
+
+    function renderIncidents(items) {
+      const el = document.getElementById('incidents');
+      if (!items.length) { el.innerHTML = '<div class="empty">No incidents yet.</div>'; return; }
+      el.innerHTML = items.map(i => `
+        <div class="item" onclick="openTimeline('${i.session_id}')">
+          <div><span class="sev ${i.severity}">${i.severity}</span> <strong>${i.event_type}</strong>
+            ${i.tool_name ? '· ' + i.tool_name : ''}</div>
+          <div class="meta">${i.decision_reason || ''} · agent ${i.agent_id} · ${i.timestamp || ''}</div>
+        </div>`).join('');
+    }
+
+    function renderApprovals(items) {
+      const el = document.getElementById('approvals');
+      if (!items.length) { el.innerHTML = '<div class="empty">No pending approvals.</div>'; return; }
+      el.innerHTML = items.map(a => `
+        <div class="item">
+          <div><strong>${a.action_type}</strong> · ${a.status}</div>
+          <div class="meta">${a.reason || ''} · ${a.agent_id} · ${a.created_at || ''}</div>
+          ${a.status === 'pending' ? `<div class="actions">
+            <button onclick="resolveApproval('${a.id}','approve')">Approve</button>
+            <button class="deny" onclick="resolveApproval('${a.id}','deny')">Deny</button>
+          </div>` : ''}
+        </div>`).join('');
+    }
+
+    async function openTimeline(sessionId) {
+      const data = await fetch('/api/sessions/' + sessionId + '/timeline').then(r => r.json());
+      const box = document.getElementById('timeline');
+      const body = document.getElementById('timeline-body');
+      box.classList.add('active');
+      body.innerHTML = `<p class="meta">Session ${sessionId}</p>` +
+        (data.events || []).map(e => `
+          <div class="tl-event">
+            <div><span class="sev ${e.severity}">${e.severity}</span> <strong>${e.event_type}</strong>
+              ${e.decision ? '· ' + e.decision : ''}</div>
+            <div class="meta">${e.timestamp || ''} · ${e.decision_reason || ''}</div>
+            ${e.tool_args ? '<pre>' + escapeHtml(JSON.stringify(e.tool_args, null, 2)) + '</pre>' : ''}
+          </div>`).join('') || '<div class="empty">No events</div>';
+      box.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    async function resolveApproval(id, action) {
+      await fetch('/api/approvals/' + id + '/' + action, { method: 'POST' });
+      refresh();
+    }
+
+    function escapeHtml(s) {
+      return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    refresh();
+    setInterval(refresh, 8000);
+  </script>
+</body>
+</html>

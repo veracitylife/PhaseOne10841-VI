@@ -1,0 +1,36 @@
+{
+  "name": "phaseone-core",
+  "version": "0.1.0",
+  "description": "PhaseOne10841 — Defensive Agent Security Gateway (Agent EDR foundation)",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev:gateway": "tsx watch gateway/src/index.ts",
+    "dev:dashboard": "tsx watch dashboard/src/server.ts",
+    "start:gateway": "node dist/gateway/src/index.js",
+    "start:dashboard": "node dist/dashboard/src/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "migrate": "tsx db/migrate.ts",
+    "example": "tsx examples/sample-client.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.7",
+    "hono": "^4.6.14",
+    "pg": "^8.13.1",
+    "yaml": "^2.6.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "license": "MIT"
+}

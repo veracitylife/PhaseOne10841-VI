@@ -1,0 +1,322 @@
+import { serve } from '@hono/node-server';
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { loadConfig, resolveUpstream } from './config.js';
+import { forwardChatCompletions } from './upstream/proxy.js';
+import {
+  enforceToolCall,
+  enforceEgressText,
+  scanMessagesForThreats,
+  newSessionId,
+} from './enforce.js';
+import { loadPolicy } from '../../policy/src/engine.js';
+import { redactSecrets } from '../../shared/src/secrets.js';
+import {
+  recordEvent,
+  ensureSession,
+  listEvents,
+  getSessionTimeline,
+  listApprovals,
+  resolveApproval,
+  getDashboardCounts,
+  listRecentIncidents,
+  getApproval,
+} from '../../recorder/src/recorder.js';
+import { healthCheck } from '../../recorder/src/db.js';
+import { listCanaryFiles } from '../../canaries/src/detector.js';
+
+const cfg = loadConfig();
+loadPolicy(cfg.policyPath);
+
+const app = new Hono();
+app.use('*', cors());
+
+app.get('/health', async (c) => {
+  const dbOk = await healthCheck();
+  return c.json({
+    status: dbOk ? 'ok' : 'degraded',
+    service: 'phaseone-gateway',
+    version: '0.1.0',
+    upstream: resolveUpstream(cfg).label,
+    db: dbOk,
+  });
+});
+
+app.get('/v1/models', (c) => {
+  const upstream = resolveUpstream(cfg).label;
+  return c.json({
+    object: 'list',
+    data: [
+      {
+        id: upstream === 'mock' ? 'phaseone-mock' : 'upstream-default',
+        object: 'model',
+        owned_by: 'phaseone',
+      },
+    ],
+  });
+});
+
+/**
+ * OpenAI-compatible chat completions proxy with policy hooks.
+ * Headers:
+ *   X-PhaseOne-Agent-Id
+ *   X-PhaseOne-Session-Id
+ */
+app.post('/v1/chat/completions', async (c) => {
+  const agentId = c.req.header('x-phaseone-agent-id') ?? c.req.header('x-agent-id') ?? 'agent-default';
+  const sessionId = c.req.header('x-phaseone-session-id') ?? c.req.header('x-session-id') ?? newSessionId();
+  const body = (await c.req.json()) as Record<string, unknown>;
+  const messages = (body.messages as Array<{ role?: string; content?: unknown }>) ?? [];
+  const model = typeof body.model === 'string' ? body.model : 'unknown';
+  const upstream = resolveUpstream(cfg);
+
+  await ensureSession(sessionId, agentId, { model, upstream: upstream.label });
+  await recordEvent({
+    session_id: sessionId,
+    agent_id: agentId,
+    event_type: 'session.start',
+    severity: 'info',
+    metadata: { model, upstream: upstream.label },
+  });
+
+  // Prompt-injection / canary scan on untrusted user/tool messages (detection)
+  await scanMessagesForThreats(sessionId, agentId, messages);
+
+  // Egress scan: block chat payloads that leak canaries/secrets to upstream when configured
+  const egressBlob = messages.map((m) => (typeof m.content === 'string' ? m.content : '')).join('\n');
+  const egressCheck = await enforceEgressText(sessionId, agentId, egressBlob, upstream.baseUrl);
+  // Only hard-block canary/secret egress — prompt injection is detect-only
+  if (
+    !egressCheck.allowed &&
+    (egressCheck.decision.matchedCanaries?.length || egressCheck.decision.matchedSecrets?.length)
+  ) {
+    await recordEvent({
+      session_id: sessionId,
+      agent_id: agentId,
+      event_type: 'chat.completion',
+      severity: 'critical',
+      decision: 'deny',
+      decision_reason: egressCheck.decision.reason,
+    });
+    return c.json(egressCheck.blockedResponse, 403);
+  }
+
+  // Pre-enforce tool calls if client sends them in assistant message (agent loop style)
+  // Also support PhaseOne extension: body.phaseone_tool_calls
+  const pendingTools =
+    (body.phaseone_tool_calls as Array<{ id?: string; name: string; arguments: unknown }>) ?? [];
+
+  for (const tool of pendingTools) {
+    const args =
+      typeof tool.arguments === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(tool.arguments);
+            } catch {
+              return { raw: tool.arguments };
+            }
+          })()
+        : tool.arguments;
+    const result = await enforceToolCall({
+      sessionId,
+      agentId,
+      toolName: tool.name,
+      toolArgs: args,
+    });
+    if (!result.allowed) {
+      return c.json(result.blockedResponse, result.pendingApproval ? 202 : 403);
+    }
+  }
+
+  // Redact secrets in logged prompt content
+  await recordEvent({
+    session_id: sessionId,
+    agent_id: agentId,
+    event_type: 'chat.completion',
+    severity: 'info',
+    decision: 'allow',
+    decision_reason: 'forwarding to upstream',
+    metadata: {
+      model,
+      message_count: messages.length,
+      prompt_preview: redactSecrets(
+        messages
+          .slice(-3)
+          .map((m) => `${m.role}: ${typeof m.content === 'string' ? m.content : '[complex]'}`)
+          .join(' | ')
+          .slice(0, 500)
+      ),
+    },
+  });
+
+  try {
+    const { status, data } = await forwardChatCompletions(cfg, body);
+    const responseData =
+      typeof data === 'object' && data
+        ? {
+            ...(data as object),
+            phaseone: {
+              session_id: sessionId,
+              agent_id: agentId,
+              upstream: upstream.label,
+              gateway: 'phaseone-core/0.1.0',
+            },
+          }
+        : data;
+
+    await recordEvent({
+      session_id: sessionId,
+      agent_id: agentId,
+      event_type: 'tool.result',
+      severity: 'info',
+      decision: 'allow',
+      result: { upstream_status: status },
+      metadata: { kind: 'chat.completion.response' },
+    });
+
+    c.header('X-PhaseOne-Session-Id', sessionId);
+    c.header('X-PhaseOne-Agent-Id', agentId);
+    return c.json(responseData, status as 200);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'upstream error';
+    await recordEvent({
+      session_id: sessionId,
+      agent_id: agentId,
+      event_type: 'chat.completion',
+      severity: 'high',
+      decision: 'deny',
+      decision_reason: message,
+    });
+    return c.json({ error: { message, type: 'upstream_error' } }, 502);
+  }
+});
+
+/** Explicit tool enforcement endpoint (sidecar / agent SDK hook) */
+app.post('/v1/phaseone/tools/enforce', async (c) => {
+  const body = await c.req.json<{
+    agent_id?: string;
+    session_id?: string;
+    tool_name: string;
+    arguments?: unknown;
+    wait_for_approval?: boolean;
+  }>();
+  const agentId = body.agent_id ?? 'agent-default';
+  const sessionId = body.session_id ?? newSessionId();
+  const result = await enforceToolCall({
+    sessionId,
+    agentId,
+    toolName: body.tool_name,
+    toolArgs: body.arguments ?? {},
+    waitForApproval: body.wait_for_approval,
+  });
+  if (!result.allowed) {
+    return c.json(
+      {
+        allowed: false,
+        pending_approval: !!result.pendingApproval,
+        approval_id: result.approvalId,
+        decision: result.decision,
+        error: result.blockedResponse?.error,
+      },
+      result.pendingApproval ? 202 : 403
+    );
+  }
+  return c.json({ allowed: true, decision: result.decision, session_id: sessionId, agent_id: agentId });
+});
+
+/** Record arbitrary observable hook (HTTP/FS/shell/MCP) from integrations */
+app.post('/v1/phaseone/events', async (c) => {
+  const body = await c.req.json<{
+    session_id?: string;
+    agent_id?: string;
+    event_type: string;
+    severity?: string;
+    tool_name?: string;
+    tool_args?: unknown;
+    destination?: string;
+    result?: unknown;
+    metadata?: Record<string, unknown>;
+  }>();
+  const sessionId = body.session_id ?? newSessionId();
+  const agentId = body.agent_id ?? 'agent-default';
+  const event = await recordEvent({
+    session_id: sessionId,
+    agent_id: agentId,
+    event_type: body.event_type as never,
+    severity: (body.severity as never) ?? 'info',
+    tool_name: body.tool_name,
+    tool_args: body.tool_args,
+    destination: body.destination,
+    result: body.result,
+    metadata: body.metadata,
+  });
+  return c.json(event, 201);
+});
+
+app.get('/v1/phaseone/events', async (c) => {
+  const sessionId = c.req.query('session_id');
+  const severity = c.req.query('severity');
+  const eventType = c.req.query('event_type');
+  const limit = Number(c.req.query('limit') ?? 100);
+  const events = await listEvents({ sessionId, severity, eventType, limit });
+  return c.json({ data: events });
+});
+
+app.get('/v1/phaseone/sessions/:id/timeline', async (c) => {
+  const timeline = await getSessionTimeline(c.req.param('id'));
+  return c.json({ session_id: c.req.param('id'), events: timeline });
+});
+
+app.get('/v1/phaseone/stats', async (c) => {
+  const counts = await getDashboardCounts();
+  return c.json(counts);
+});
+
+app.get('/v1/phaseone/incidents', async (c) => {
+  const incidents = await listRecentIncidents(Number(c.req.query('limit') ?? 50));
+  return c.json({ data: incidents });
+});
+
+app.get('/v1/phaseone/approvals', async (c) => {
+  const status = c.req.query('status');
+  const data = await listApprovals(status);
+  return c.json({ data });
+});
+
+app.get('/v1/phaseone/approvals/:id', async (c) => {
+  const approval = await getApproval(c.req.param('id'));
+  if (!approval) return c.json({ error: 'not found' }, 404);
+  return c.json(approval);
+});
+
+app.post('/v1/phaseone/approvals/:id/approve', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { resolved_by?: string };
+  const approval = await resolveApproval(c.req.param('id'), 'approved', body.resolved_by ?? 'dashboard');
+  if (!approval) return c.json({ error: 'not found or already resolved' }, 404);
+  return c.json(approval);
+});
+
+app.post('/v1/phaseone/approvals/:id/deny', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { resolved_by?: string };
+  const approval = await resolveApproval(c.req.param('id'), 'denied', body.resolved_by ?? 'dashboard');
+  if (!approval) return c.json({ error: 'not found or already resolved' }, 404);
+  return c.json(approval);
+});
+
+app.get('/v1/phaseone/canaries', (c) => {
+  return c.json({
+    files: listCanaryFiles(),
+    note: 'Markers are harmless fakes. Detection fires when values appear in tool args/egress.',
+  });
+});
+
+app.get('/v1/phaseone/policy', (c) => {
+  const policy = loadPolicy(cfg.policyPath);
+  return c.json(policy);
+});
+
+const port = cfg.port;
+console.log(`PhaseOne10841 gateway listening on :${port} (upstream=${resolveUpstream(cfg).label})`);
+serve({ fetch: app.fetch, port, hostname: '0.0.0.0' });
+
+export default app;

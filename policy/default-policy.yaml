@@ -1,0 +1,129 @@
+# PhaseOne10841 default policy — defensive default-deny where noted
+version: "0.1"
+name: phaseone-default
+
+domains:
+  mode: allowlist  # default-deny unknown egress
+  allow:
+    - api.openai.com
+    - openrouter.ai
+    - localhost
+    - 127.0.0.1
+    - host.docker.internal
+  deny: []
+
+tools:
+  mode: allowlist
+  allow:
+    - http_request
+    - fetch
+    - web_search
+    - read_file
+    - list_files
+    - write_file
+    - delete_file
+    - force_push
+    - drop_database
+    - send_email_blast
+    - run_shell  # further restricted by shell rules
+    - mcp_call
+    - spawn_agent
+  deny:
+    - raw_exec
+    - unrestricted_shell
+
+shell:
+  mode: deny_by_default
+  allow_patterns:
+    - "^ls(\\s|$)"
+    - "^pwd$"
+    - "^echo\\s"
+    - "^cat\\s"
+    - "^head\\s"
+    - "^tail\\s"
+    - "^wc\\s"
+    - "^grep\\s"
+    - "^rg\\s"
+    - "^find\\s"
+    - "^node\\s"
+    - "^npm\\s(test|run|install|ci)"
+    - "^python3?\\s"
+    - "^pytest"
+  deny_patterns:
+    - "rm\\s+-rf\\s+/"
+    - "mkfs"
+    - "dd\\s+if="
+    - "curl.+\\|\\s*(ba)?sh"
+    - "wget.+\\|\\s*(ba)?sh"
+    - "chmod\\s+777"
+    - "chown\\s+-R"
+    - "sudo\\s"
+    - "iptables"
+    - "nc\\s+-l"
+    - "ncat"
+    - "python.*-c.*socket"
+    - "base64\\s+-d.*\\|\\s*(ba)?sh"
+
+filesystem:
+  allowed_roots:
+    - /workspace
+    - /tmp/phaseone-agent
+    - /app/canaries
+    - ./canaries
+    - canaries
+  blocked_paths:
+    - "**/.env"
+    - "**/.env.*"
+    - "**/id_rsa"
+    - "**/id_ed25519"
+    - "**/id_ecdsa"
+    - "**/.ssh/**"
+    - "**/credentials"
+    - "**/credentials.json"
+    - "**/.aws/credentials"
+    - "**/secrets/**"
+    - "**/kube/config"
+    - "**/.docker/config.json"
+
+http:
+  allowed_methods:
+    - GET
+    - POST
+    - HEAD
+    - OPTIONS
+  denied_methods:
+    - TRACE
+    - CONNECT
+
+mcp:
+  mode: allowlist
+  allow_servers:
+    - filesystem
+    - fetch
+    - memory
+    - brave-search
+  allow_tools: []  # empty = all tools on allowed servers
+
+destructive:
+  # Actions that require human approval before proceeding
+  # Patterns use JS RegExp syntax (use flag i via engine, not (?i))
+  patterns:
+    - "delete|unlink|rm\\s|remove_file|drop\\s+table|truncate|force.?push|git\\s+push\\s+--force|destroy|wipe|format\\s"
+    - "DROP\\s+(TABLE|DATABASE|SCHEMA)"
+    - "ALTER\\s+USER|GRANT\\s+ALL"
+  tools:
+    - delete_file
+    - force_push
+    - drop_database
+    - send_email_blast
+
+agent_spawn:
+  max_depth: 2
+  max_children_per_agent: 3
+
+secret_egress:
+  block: true
+
+canary:
+  block_on_detect: true
+  severity: high

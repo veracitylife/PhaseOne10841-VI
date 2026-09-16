@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: phaseone
+      POSTGRES_PASSWORD: phaseone
+      POSTGRES_DB: phaseone
+    ports:
+      - "5432:5432"
+    volumes:
+      - phaseone_pg:/var/lib/postgresql/data
+      - ./db/migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U phaseone -d phaseone"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  gateway:
+    build: .
+    command: ["tsx", "gateway/src/index.ts"]
+    environment:
+      DATABASE_URL: postgres://phaseone:phaseone@postgres:5432/phaseone
+      GATEWAY_PORT: "8080"
+      UPSTREAM_PROVIDER: ${UPSTREAM_PROVIDER:-mock}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      PHASEONE_POLICY_PATH: /app/policy/default-policy.yaml
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./policy:/app/policy:ro
+      - ./canaries:/app/canaries:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  dashboard:
+    build: .
+    command: ["tsx", "dashboard/src/server.ts"]
+    environment:
+      DASHBOARD_PORT: "3000"
+      GATEWAY_URL: http://gateway:8080
+    ports:
+      - "3000:3000"
+    depends_on:
+      - gateway
+
+volumes:
+  phaseone_pg:
