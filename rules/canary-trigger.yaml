@@ -1,0 +1,15 @@
+# PhaseOne10841 detection rule — defensive Sigma-ish
+id: phaseone.canary.trigger
+title: Canary marker observed
+description: Fires when a canary marker appears in tool args or egress.
+status: stable
+level: critical
+enabled: true
+logsource:
+  product: PhaseOne10841
+detection:
+  selection:
+    event_type: canary.trigger
+  condition: selection
+falsepositives:
+  - Lab harness fixtures labeled PHASEONE_TEST_*

@@ -11,6 +11,8 @@ export interface GatewayConfig {
   databaseUrl: string;
   policyPath?: string;
   siemWebhookUrl?: string;
+  alertWebhookUrl?: string;
+  rulesDir?: string;
   productVersion: string;
 }
 
@@ -27,7 +29,9 @@ export function loadConfig(): GatewayConfig {
     databaseUrl: process.env.DATABASE_URL ?? 'postgres://phaseone:phaseone@localhost:5432/phaseone',
     policyPath: process.env.PHASEONE_POLICY_PATH,
     siemWebhookUrl: process.env.PHASEONE_SIEM_WEBHOOK_URL ?? process.env.SIEM_WEBHOOK_URL,
-    productVersion: '0.3.0',
+    alertWebhookUrl: process.env.PHASEONE_ALERT_WEBHOOK_URL ?? process.env.ALERT_WEBHOOK_URL,
+    rulesDir: process.env.PHASEONE_RULES_DIR,
+    productVersion: '0.4.0',
   };
 }
 

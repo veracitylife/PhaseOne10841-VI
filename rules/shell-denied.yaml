@@ -1,0 +1,13 @@
+id: phaseone.shell.denied
+title: Shell execution denied
+description: Shell tool calls denied by policy (deny-by-default).
+status: stable
+level: medium
+enabled: true
+logsource:
+  product: PhaseOne10841
+detection:
+  selection:
+    tool_name: shell_exec
+    decision: deny
+  condition: selection

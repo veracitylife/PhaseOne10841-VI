@@ -1,6 +1,6 @@
 # PhaseOne10841 default policy — Veracity Integrity LLC
 # https://VeracityIntegrity.com
-version: "0.3"
+version: "0.4"
 name: phaseone-default
 
 domains:
@@ -176,3 +176,10 @@ permission_analyzer:
   enabled: true
   warn_on_excessive: true
   record_findings_on_session_start: false
+
+# Phase 4
+alerting:
+  enabled: true
+detection_rules:
+  enabled: true
+  dir: ./rules

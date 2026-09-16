@@ -1,0 +1,13 @@
+id: phaseone.injection.score.high
+title: High injection score on event
+description: Matches events whose metadata.injection_score >= threshold.
+status: experimental
+level: high
+enabled: true
+logsource:
+  product: PhaseOne10841
+detection:
+  selection:
+    field_gte:
+      injection_score: 0.7
+  condition: selection

@@ -9,6 +9,8 @@ import { scanPromptInjection } from '../../shared/src/prompt-injection.js';
 import { getPolicy } from '../../policy/src/engine.js';
 import { recordEvent, ensureSession } from '../../recorder/src/recorder.js';
 import { newSessionId } from './enforce.js';
+import { Metrics } from '../../shared/src/metrics.js';
+import { evaluateEventRules } from './routes/phase4.js';
 
 export interface A2AMessage {
   from_agent_id: string;
@@ -210,6 +212,14 @@ export async function processA2AMessage(msg: A2AMessage): Promise<A2ADecision> {
       metadata: { rule: hit.rule, channel: 'a2a', trust_level: trust },
     });
   }
+
+  Metrics.a2a(action === 'quarantine' ? 'quarantine' : action === 'deny' ? 'deny' : 'allow');
+  evaluateEventRules({
+    event_type: action === 'deny' ? 'a2a.blocked' : action === 'quarantine' ? 'a2a.quarantined' : 'a2a.message',
+    a2a_trust: trust,
+    decision: action === 'allow' ? 'allow' : action === 'quarantine' ? 'quarantine' : 'deny',
+    decision_reason: reason,
+  });
 
   return {
     action,

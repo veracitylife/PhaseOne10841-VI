@@ -1,0 +1,12 @@
+id: phaseone.injection.blocked
+title: Prompt injection blocked
+description: Untrusted content blocked by prompt-injection scanner.
+status: stable
+level: high
+enabled: true
+logsource:
+  product: PhaseOne10841
+detection:
+  selection:
+    event_type: prompt_injection.blocked
+  condition: selection

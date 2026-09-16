@@ -8,11 +8,19 @@
 import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import {
+  loadRbacConfig,
+  resolveRole,
+  isAuthorizedEmail,
+  type DashboardRole,
+} from '../../shared/src/rbac.js';
 
 export interface AuthConfig {
   enabled: boolean;
   /** Comma-separated allowlist of admin emails */
   allowlist: string[];
+  /** Viewer emails (read-only) */
+  viewerAllowlist: string[];
   sessionTtlMs: number;
   otpTtlMs: number;
   otpLength: number;
@@ -38,6 +46,7 @@ export interface AuthConfig {
 export interface SessionRecord {
   id: string;
   email: string;
+  role: DashboardRole;
   createdAt: number;
   expiresAt: number;
   csrfToken: string;
@@ -61,14 +70,14 @@ const rateHits = new Map<string, number[]>();
 let lastTestOtp: { email: string; code: string; at: number } | null = null;
 
 export function loadAuthConfig(): AuthConfig {
-  const allow = (process.env.PHASEONE_ADMIN_EMAILS ?? process.env.DASHBOARD_ADMIN_EMAILS ?? 'admin@localhost')
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
+  const rbac = loadRbacConfig();
+  const allow = rbac.adminEmails;
+  const viewers = rbac.viewerEmails;
   const smtpHost = process.env.SMTP_HOST ?? '';
   return {
     enabled: (process.env.PHASEONE_DASHBOARD_AUTH ?? 'true').toLowerCase() !== 'false',
     allowlist: allow,
+    viewerAllowlist: viewers,
     sessionTtlMs: Number(process.env.PHASEONE_SESSION_TTL_MS ?? 8 * 60 * 60 * 1000),
     otpTtlMs: Number(process.env.PHASEONE_OTP_TTL_MS ?? 10 * 60 * 1000),
     otpLength: 6,
@@ -109,10 +118,19 @@ function safeEqualHex(a: string, b: string): boolean {
 }
 
 export function isEmailAllowlisted(email: string, cfg = loadAuthConfig()): boolean {
-  const e = email.trim().toLowerCase();
-  if (!e || !e.includes('@')) return false;
-  if (cfg.allowlist.includes('*')) return true;
-  return cfg.allowlist.includes(e);
+  return isAuthorizedEmail(email, {
+    adminEmails: cfg.allowlist,
+    viewerEmails: cfg.viewerAllowlist,
+    allowAllAdminsWildcard: cfg.allowlist.includes('*'),
+  });
+}
+
+export function roleForEmail(email: string, cfg = loadAuthConfig()): DashboardRole {
+  return resolveRole(email, {
+    adminEmails: cfg.allowlist,
+    viewerEmails: cfg.viewerAllowlist,
+    allowAllAdminsWildcard: cfg.allowlist.includes('*'),
+  });
 }
 
 export function checkOtpRateLimit(email: string, cfg = loadAuthConfig()): { ok: boolean; retryAfterMs?: number } {
@@ -294,9 +312,11 @@ export function verifyOtp(
 export function createSession(email: string, cfg = loadAuthConfig()): SessionRecord {
   const id = randomBytes(24).toString('hex');
   const csrfToken = randomBytes(16).toString('hex');
+  const role = roleForEmail(email, cfg);
   const rec: SessionRecord = {
     id,
     email: email.toLowerCase(),
+    role: role === 'none' ? 'viewer' : role,
     createdAt: Date.now(),
     expiresAt: Date.now() + cfg.sessionTtlMs,
     csrfToken,

@@ -29,6 +29,7 @@ import { processA2AMessage } from './a2a-firewall.js';
 import { runInjectionScan, getInjectionPolicy } from './scanner.js';
 import { listInjectionRules } from '../../shared/src/prompt-injection.js';
 import { registerPhase3Routes } from './routes/phase3.js';
+import { registerPhase4Routes } from './routes/phase4.js';
 import { registerGatewayMiddleware } from './middleware/index.js';
 import { getRichSessionTimeline } from '../../recorder/src/recorder.js';
 
@@ -186,7 +187,7 @@ app.post('/v1/chat/completions', async (c) => {
               session_id: sessionId,
               agent_id: agentId,
               upstream: upstream.label,
-              gateway: 'phaseone-core/0.3.0',
+              gateway: 'phaseone-core/0.4.0',
             },
           }
         : data;
@@ -501,9 +502,10 @@ app.get('/v1/phaseone/policy', (c) => {
 });
 
 registerPhase3Routes(app, cfg);
+registerPhase4Routes(app, cfg);
 
 const port = cfg.port;
-console.log(`PhaseOne10841 Agent Security Gateway v0.3.0 — Veracity Integrity LLC`);
+console.log(`PhaseOne10841 Agent Security Gateway v0.4.0 — Veracity Integrity LLC`);
 console.log(`Listening on :${port} (upstream=${resolveUpstream(cfg).label}) · https://VeracityIntegrity.com`);
 serve({ fetch: app.fetch, port, hostname: '0.0.0.0' });
 

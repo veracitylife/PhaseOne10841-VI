@@ -111,10 +111,10 @@
   <header>
     <div>
       <h1>PhaseOne10841 <span class="badge">Agent EDR</span></h1>
-      <div class="sub">A product of <a href="https://VeracityIntegrity.com" target="_blank" rel="noopener">Veracity Integrity LLC</a> · v0.3</div>
+      <div class="sub">A product of <a href="https://VeracityIntegrity.com" target="_blank" rel="noopener">Veracity Integrity LLC</a> · v0.4</div>
     </div>
     <div class="row">
-      <span class="sub" id="auth-email"></span>
+      <span class="sub" id="auth-email"></span> <span class="badge" id="auth-role"></span>
       <button class="ghost" id="btn-refresh" onclick="refreshAll()">Refresh</button>
       <button class="ghost" id="btn-logout" onclick="logout()">Logout</button>
     </div>
@@ -152,6 +152,8 @@
         <button data-view="permissions">Permissions</button>
         <button data-view="policy">Policy</button>
         <button data-view="siem">SIEM export</button>
+        <button data-view="rules">Detection rules</button>
+        <button data-view="audit">Audit log</button>
         <button data-view="lab">Lab monitor</button>
         <button data-view="settings">Settings</button>
       </nav>
@@ -195,7 +197,11 @@
         </section>
 
         <section id="view-canaries" class="view hidden">
-          <div class="panel"><h2>Canary management</h2><div id="canaries-list"></div></div>
+          <div class="panel">
+            <h2>Canary management</h2>
+            <p class="sub">Harmless markers. Rotate replaces runtime values; last trigger shown when available. Admin only for rotate.</p>
+            <div id="canaries-list"></div>
+          </div>
           <div class="panel"><h2>Canary / secret hits</h2><div id="canary-hits"></div></div>
         </section>
 
@@ -266,11 +272,31 @@
           </div>
         </section>
 
+        <section id="view-rules" class="view hidden">
+          <div class="panel">
+            <h2>Detection rules</h2>
+            <p class="sub">Sigma-ish YAML rules from <code>rules/</code>. Hit counts are process-local.</p>
+            <div id="rules-list"></div>
+          </div>
+        </section>
+
+        <section id="view-audit" class="view hidden">
+          <div class="panel">
+            <h2>Admin audit log</h2>
+            <p class="sub">Dashboard actions with actor email + timestamp (login, approve/deny, policy save, export, settings, canary rotate, A2A trust).</p>
+            <div id="audit-list"></div>
+          </div>
+        </section>
+
         <section id="view-settings" class="view hidden">
           <div class="panel">
             <h2>Settings &amp; health</h2>
             <pre id="settings-out"></pre>
-            <p class="sub">MFA: set <code>PHASEONE_ADMIN_EMAILS</code>, optional SMTP_*, or use OTP fallback file for local/dev. See README.</p>
+            <p class="sub">MFA: <code>PHASEONE_ADMIN_EMAILS</code> (mutate) · <code>PHASEONE_VIEWER_EMAILS</code> (read-only). Optional SMTP or OTP fallback. Alerts: <code>PHASEONE_ALERT_WEBHOOK_URL</code>. Metrics: <code>/metrics</code>.</p>
+            <div class="actions" style="margin-top:.75rem">
+              <button class="ghost" onclick="testAlert()">Test alert webhook</button>
+            </div>
+            <pre id="alert-out"></pre>
           </div>
         </section>
       </main>
@@ -286,6 +312,8 @@
 <script>
   let csrf = null;
   let currentView = 'overview';
+  let canMutate = true;
+  let userRole = null;
 
   const cardDefs = [
     ['agents', 'Active agents', ''],
@@ -336,7 +364,9 @@
     }
     if (data.authenticated) {
       csrf = data.csrf;
-      showApp(data.email);
+      canMutate = !!data.can_mutate;
+      userRole = data.role || 'admin';
+      showApp(data.email, userRole);
       return true;
     }
     document.getElementById('login-gate').classList.remove('hidden');
@@ -346,12 +376,13 @@
     return false;
   }
 
-  function showApp(email) {
+  function showApp(email, role) {
     document.getElementById('login-gate').classList.add('hidden');
     document.getElementById('app').classList.remove('hidden');
     document.getElementById('btn-logout').classList.remove('hidden');
     document.getElementById('btn-refresh').classList.remove('hidden');
     document.getElementById('auth-email').textContent = email || '';
+    document.getElementById('auth-role').textContent = role || '';
   }
 
   async function sendOtp() {
@@ -373,7 +404,9 @@
       return;
     }
     csrf = data.csrf;
-    showApp(data.email);
+    canMutate = !!data.can_mutate;
+    userRole = data.role || 'admin';
+    showApp(data.email, userRole);
     await refreshAll();
   }
 
@@ -422,7 +455,7 @@
         <div class="meta"><strong>Reason:</strong> ${escapeHtml(a.reason || '—')}</div>
         <div class="meta">Agent <strong>${escapeHtml(a.agent_id)}</strong> · session ${escapeHtml(a.session_id)} · expires ${escapeHtml(a.expires_at || '—')}</div>
         <div class="meta">Args: <code>${escapeHtml(JSON.stringify(payload.args || payload).slice(0, 180))}</code></div>
-        ${a.status === 'pending' ? `
+        ${a.status === 'pending' && canMutate ? `
           <div class="actions">
             <input id="note-${a.id}" placeholder="Optional note" style="max-width:220px" />
             <button onclick="resolveApproval('${a.id}','approve')">Approve</button>
@@ -557,12 +590,35 @@
 
     if (currentView === 'canaries') {
       const { data } = await api('/api/canaries');
-      const files = data.files || [];
-      document.getElementById('canaries-list').innerHTML = files.map(f =>
-        `<div class="item"><strong>${escapeHtml(f.name || f.id || 'canary')}</strong><div class="meta">${escapeHtml(JSON.stringify(f).slice(0,200))}</div></div>`
-      ).join('') || '<div class="empty">No canaries</div>';
+      const items = data.data || [];
+      document.getElementById('canaries-list').innerHTML = items.length
+        ? items.map(f => `
+          <div class="item">
+            <div><strong>${escapeHtml(f.name)}</strong> · <code>${escapeHtml(f.canary_id)}</code></div>
+            <div class="meta">marker ${escapeHtml(f.marker_preview)} · rotated ${escapeHtml(f.rotated_at || 'never')} · last trigger ${escapeHtml(f.last_trigger_at || '—')}</div>
+            ${canMutate ? `<div class="actions"><button class="ghost" onclick="rotateCanary('${escapeHtml(f.canary_id)}','${escapeHtml(f.name)}')">Rotate</button></div>` : ''}
+          </div>`).join('')
+        : '<div class="empty">No canaries</div>';
       const hits = await api('/api/events?event_type=canary.trigger&limit=30');
       renderIncidentItems(hits.data?.data || [], 'canary-hits');
+    }
+
+    if (currentView === 'rules') {
+      const { data } = await api('/api/rules');
+      const rules = data.data || [];
+      document.getElementById('rules-list').innerHTML = rules.length
+        ? rules.map(r => `<div class="item"><div><span class="sev ${escapeHtml(r.level)}">${escapeHtml(r.level)}</span> <strong>${escapeHtml(r.id)}</strong> · hits ${r.hit_count ?? 0}</div>
+            <div class="meta">${escapeHtml(r.title || '')} · ${r.enabled === false ? 'disabled' : 'enabled'}</div></div>`).join('')
+        : '<div class="empty">No rules loaded</div>';
+    }
+
+    if (currentView === 'audit') {
+      const { data } = await api('/api/audit');
+      const rows = data.data || [];
+      document.getElementById('audit-list').innerHTML = rows.length
+        ? rows.map(a => `<div class="item"><strong>${escapeHtml(a.action)}</strong> · ${escapeHtml(a.actor_email)}
+            <div class="meta">${escapeHtml(a.created_at || '')} · ${escapeHtml(a.resource || '')} · ${escapeHtml(JSON.stringify(a.detail || {}).slice(0,120))}</div></div>`).join('')
+        : '<div class="empty">No audit entries yet.</div>';
     }
 
     if (currentView === 'injections') {
@@ -593,8 +649,27 @@
     if (currentView === 'settings') {
       const { data } = await api('/api/health/detail');
       const auth = await api('/api/auth/status');
-      document.getElementById('settings-out').textContent = JSON.stringify({ health: data, auth: auth.data }, null, 2);
+      const alerts = await api('/api/alerts/config');
+      const metrics = await api('/api/metrics');
+      document.getElementById('settings-out').textContent = JSON.stringify({
+        health: data, auth: auth.data, alerts: alerts.data,
+        metrics_counters: { blocks: metrics.data?.blocks, canaries: metrics.data?.canaries },
+      }, null, 2);
     }
+  }
+
+  async function rotateCanary(canary_id, name) {
+    if (!canMutate) { toast('viewers are read-only'); return; }
+    const { data } = await api('/api/canaries/rotate', { method: 'POST', body: JSON.stringify({ canary_id, name }) });
+    toast(data.ok ? 'Canary rotated' : (data.error || 'failed'));
+    refreshAll();
+  }
+
+  async function testAlert() {
+    if (!canMutate) { toast('viewers are read-only'); return; }
+    const { data } = await api('/api/alerts/test', { method: 'POST', body: '{}' });
+    document.getElementById('alert-out').textContent = JSON.stringify(data, null, 2);
+    toast(data.ok ? 'Alert sent' : (data.error || 'alert failed'));
   }
 
   checkAuth().then((ok) => { if (ok) refreshAll(); });

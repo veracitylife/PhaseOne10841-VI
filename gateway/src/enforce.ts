@@ -18,6 +18,10 @@ import {
   approvalExpiresAt,
   getApprovalTimeoutMs,
 } from './approval.js';
+import { Metrics } from '../../shared/src/metrics.js';
+import { notifyHighSeverity } from '../../shared/src/alerting.js';
+import { noteCanaryTrigger } from '../../canaries/src/manager.js';
+import { evaluateEventRules } from './routes/phase4.js';
 
 export interface EnforceResult {
   allowed: boolean;
@@ -60,6 +64,8 @@ export async function scanMessagesForThreats(
     const text = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content ?? '');
     const canaries = matchCanaries(text);
     for (const c of canaries) {
+      noteCanaryTrigger(c.canaryId, { session_id: sessionId, agent_id: agentId, name: c.name });
+      Metrics.canary();
       await recordEvent({
         session_id: sessionId,
         agent_id: agentId,
@@ -69,10 +75,29 @@ export async function scanMessagesForThreats(
         decision_reason: `canary ${c.name} seen in message content`,
         metadata: { canary_id: c.canaryId, marker_preview: c.marker.slice(0, 12) + '…' },
       });
+      notifyHighSeverity({
+        event: 'canary',
+        severity: 'critical',
+        message: `Canary ${c.name} observed in message content`,
+        agent_id: agentId,
+        session_id: sessionId,
+        detail: { canary_id: c.canaryId },
+      });
+      evaluateEventRules({ event_type: 'canary.trigger', canary: true, agent_id: agentId } as never);
     }
   }
 
   if (inj.blocked) {
+    Metrics.injection('blocked');
+    Metrics.block('prompt_injection');
+    notifyHighSeverity({
+      event: 'injection_blocked',
+      severity: 'high',
+      message: inj.reason ?? 'prompt injection blocked',
+      agent_id: agentId,
+      session_id: sessionId,
+    });
+    evaluateEventRules({ event_type: 'prompt_injection.blocked' });
     return { blocked: true, reason: inj.reason };
   }
   return { blocked: false };
@@ -133,7 +158,33 @@ export async function enforceToolCall(opts: {
     },
   });
 
+  evaluateEventRules({
+    event_type: 'tool.call',
+    tool_name: opts.toolName,
+    decision: decision.action === 'deny' ? 'deny' : decision.action === 'require_approval' ? 'require_approval' : 'allow',
+    decision_reason: decision.reason,
+    destination: destination ?? undefined,
+    canary: Boolean(decision.matchedCanaries?.length),
+    metadata: { rule_id: decision.ruleId },
+  });
+
+  if (decision.action === 'deny') {
+    Metrics.block(decision.ruleId ?? 'policy');
+  }
+
   if (decision.matchedCanaries && decision.matchedCanaries.length > 0) {
+    for (const cid of decision.matchedCanaries) {
+      noteCanaryTrigger(cid, { session_id: opts.sessionId, agent_id: opts.agentId });
+    }
+    Metrics.canary();
+    notifyHighSeverity({
+      event: 'canary',
+      severity: 'critical',
+      message: `Canary trigger on tool ${opts.toolName}`,
+      agent_id: opts.agentId,
+      session_id: opts.sessionId,
+      detail: { canaries: decision.matchedCanaries },
+    });
     await recordEvent({
       session_id: opts.sessionId,
       agent_id: opts.agentId,
@@ -252,6 +303,7 @@ export async function enforceToolCall(opts: {
   if (decision.action === 'require_approval') {
     const risk = decision.risk ?? riskForTool(opts.toolName, decision.reason);
     const expiresAt = approvalExpiresAt();
+    Metrics.approval('requested');
     const approval = await createApproval({
       session_id: opts.sessionId,
       agent_id: opts.agentId,
@@ -287,7 +339,21 @@ export async function enforceToolCall(opts: {
     if (opts.waitForApproval && approval.id) {
       const wait = await waitForApprovalDecision({ approvalId: approval.id });
       if (wait.status === 'approved') {
+        Metrics.approval('approved');
         return { allowed: true, approvalId: approval.id, decision: wait.decision };
+      }
+      if (wait.status === 'expired' || wait.status === 'timeout') {
+        Metrics.approval('expired');
+        notifyHighSeverity({
+          event: 'approval_timeout',
+          severity: 'high',
+          message: `Approval timed out for ${opts.toolName}`,
+          agent_id: opts.agentId,
+          session_id: opts.sessionId,
+          detail: { approval_id: approval.id },
+        });
+      } else {
+        Metrics.approval('denied');
       }
       return {
         allowed: false,

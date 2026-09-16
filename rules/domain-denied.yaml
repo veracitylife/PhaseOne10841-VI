@@ -1,0 +1,14 @@
+id: phaseone.domain.denied
+title: Egress domain denied
+description: HTTP/tool destination blocked by domain allowlist / default-deny.
+status: stable
+level: medium
+enabled: true
+logsource:
+  product: PhaseOne10841
+detection:
+  selection:
+    decision: deny
+    field_contains:
+      decision_reason: domain
+  condition: selection

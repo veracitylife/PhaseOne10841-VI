@@ -71,7 +71,7 @@ function hostFromDest(dest?: string | null): string | undefined {
 
 /** Map a PhaseOne event to an ECS-ish document (secrets redacted). */
 export function toEcsLike(event: AgentEvent, opts?: { version?: string }): EcsLikeEvent {
-  const version = opts?.version ?? '0.3.0';
+  const version = opts?.version ?? '0.4.0';
   const ts = event.timestamp ?? new Date().toISOString();
   const args = event.tool_args != null ? redactSecretsDeep(event.tool_args) : undefined;
   const result = event.result != null ? redactSecretsDeep(event.result) : undefined;

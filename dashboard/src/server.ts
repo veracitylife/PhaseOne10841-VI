@@ -1,6 +1,6 @@
 /**
  * PhaseOne10841 Admin Console — Veracity Integrity LLC
- * MFA (email OTP) gated proxy to the gateway + static UI.
+ * MFA (email OTP) gated proxy + RBAC lite (admin vs viewer).
  */
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
@@ -20,11 +20,13 @@ import {
   validateCsrf,
   __testGetLastOtp,
 } from './auth.js';
+import { canMutate, type DashboardRole } from '../../shared/src/rbac.js';
+import { recordAudit } from '../../shared/src/audit.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const GATEWAY_URL = process.env.GATEWAY_URL ?? 'http://gateway:8080';
 const PORT = Number(process.env.DASHBOARD_PORT ?? 3000);
-const VERSION = '0.3.0';
+const VERSION = '0.4.0';
 
 const app = new Hono();
 const authCfg = loadAuthConfig();
@@ -46,27 +48,34 @@ async function gw(path: string, init?: RequestInit) {
   return { status: res.status, data: null, raw, contentType: ct };
 }
 
-function requireAuth(c: { req: { header: (n: string) => string | undefined } }): {
-  ok: true;
-  email: string;
-  csrf: string;
-  sessionId: string;
-} | { ok: false; status: 401; error: string } {
+type AuthOk = { ok: true; email: string; csrf: string; sessionId: string; role: DashboardRole };
+type AuthFail = { ok: false; status: 401 | 403; error: string };
+
+function requireAuth(c: { req: { header: (n: string) => string | undefined } }): AuthOk | AuthFail {
   if (!authCfg.enabled) {
-    return { ok: true, email: 'auth-disabled@local', csrf: 'disabled', sessionId: 'disabled' };
+    return { ok: true, email: 'auth-disabled@local', csrf: 'disabled', sessionId: 'disabled', role: 'admin' };
   }
   const cookies = parseCookies(c.req.header('cookie'));
   const session = getSession(cookies[authCfg.cookieName]);
   if (!session) return { ok: false, status: 401, error: 'authentication required' };
-  return { ok: true, email: session.email, csrf: session.csrfToken, sessionId: session.id };
+  return {
+    ok: true,
+    email: session.email,
+    csrf: session.csrfToken,
+    sessionId: session.id,
+    role: session.role ?? 'admin',
+  };
 }
 
 function requireMutatingAuth(c: {
   req: { header: (n: string) => string | undefined };
-}): ReturnType<typeof requireAuth> {
+}): AuthOk | AuthFail {
   const auth = requireAuth(c);
   if (!auth.ok) return auth;
   if (!authCfg.enabled) return auth;
+  if (!canMutate(auth.role)) {
+    return { ok: false, status: 403, error: 'viewer role is read-only' };
+  }
   const cookies = parseCookies(c.req.header('cookie'));
   const session = getSession(cookies[authCfg.cookieName]);
   if (!session) return { ok: false, status: 401, error: 'authentication required' };
@@ -77,7 +86,42 @@ function requireMutatingAuth(c: {
   return auth;
 }
 
-/** Public: health + auth endpoints */
+app.get('/healthz', (c) =>
+  c.json({
+    status: 'ok',
+    service: 'phaseone-dashboard',
+    version: VERSION,
+    product: 'PhaseOne10841',
+    vendor: 'Veracity Integrity LLC',
+  })
+);
+
+app.get('/readyz', async (c) => {
+  try {
+    const { status, data } = await gw('/readyz');
+    const ready = status === 200 && (data as { status?: string })?.status === 'ready';
+    return c.json(
+      {
+        status: ready ? 'ready' : 'not_ready',
+        dashboard: 'ok',
+        gateway: data,
+        version: VERSION,
+      },
+      ready ? 200 : 503
+    );
+  } catch (err) {
+    return c.json(
+      {
+        status: 'not_ready',
+        dashboard: 'ok',
+        gateway: { error: err instanceof Error ? err.message : 'unreachable' },
+        version: VERSION,
+      },
+      503
+    );
+  }
+});
+
 app.get('/api/health', async (c) => {
   const { status, data } = await gw('/health');
   return c.json(
@@ -100,7 +144,9 @@ app.get('/api/auth/status', (c) => {
     enabled: authCfg.enabled,
     authenticated: auth.ok,
     email: auth.ok ? auth.email : null,
+    role: auth.ok ? auth.role : null,
     csrf: auth.ok ? auth.csrf : null,
+    can_mutate: auth.ok ? canMutate(auth.role) : false,
     vendor: 'Veracity Integrity LLC',
   });
 });
@@ -129,25 +175,40 @@ app.post('/api/auth/login', async (c) => {
   if (!result.ok || !result.session) {
     return c.json({ ok: false, error: result.error }, 401);
   }
+  await recordAudit({
+    actor_email: result.session.email,
+    action: 'login',
+    detail: { role: result.session.role },
+    ip: c.req.header('x-forwarded-for') ?? undefined,
+  }).catch(() => undefined);
   const headers = new Headers({ 'content-type': 'application/json' });
   headers.append('set-cookie', sessionCookieHeader(result.session, authCfg));
   headers.append('set-cookie', csrfCookieHeader(result.session, authCfg));
   return new Response(
-    JSON.stringify({ ok: true, email: result.session.email, csrf: result.session.csrfToken }),
+    JSON.stringify({
+      ok: true,
+      email: result.session.email,
+      role: result.session.role,
+      csrf: result.session.csrfToken,
+      can_mutate: canMutate(result.session.role),
+    }),
     { status: 200, headers }
   );
 });
 
-app.post('/api/auth/logout', (c) => {
+app.post('/api/auth/logout', async (c) => {
   const cookies = parseCookies(c.req.header('cookie'));
   const sid = cookies[authCfg.cookieName];
+  const session = getSession(sid);
+  if (session) {
+    await recordAudit({ actor_email: session.email, action: 'logout' }).catch(() => undefined);
+  }
   if (sid) destroySession(sid);
   const headers = new Headers({ 'content-type': 'application/json' });
   for (const h of clearSessionCookies(authCfg)) headers.append('set-cookie', h);
   return new Response(JSON.stringify({ ok: true }), { status: 200, headers });
 });
 
-/** Test harness — only when PHASEONE_AUTH_TEST_MODE=true */
 app.get('/api/auth/test/last-otp', (c) => {
   if (!authCfg.testMode) return c.json({ error: 'not available' }, 404);
   return c.json({ otp: __testGetLastOtp() });
@@ -157,8 +218,10 @@ function gate(c: Parameters<typeof requireAuth>[0]) {
   return requireAuth(c);
 }
 
-/** Protected API proxies */
-const proxyGet = (apiPath: string, gwPath: string | ((c: { req: { param: (n: string) => string; query: (n: string) => string | undefined } }) => string)) => {
+const proxyGet = (
+  apiPath: string,
+  gwPath: string | ((c: { req: { param: (n: string) => string; query: (n: string) => string | undefined } }) => string)
+) => {
   app.get(apiPath, async (c) => {
     const auth = gate(c);
     if (!auth.ok) return c.json({ error: auth.error }, 401);
@@ -180,13 +243,18 @@ proxyGet('/api/approvals', (c) => {
 });
 proxyGet('/api/agents', '/v1/phaseone/agents');
 proxyGet('/api/sessions', '/v1/phaseone/sessions');
-proxyGet('/api/canaries', '/v1/phaseone/canaries');
+proxyGet('/api/canaries', '/v1/phaseone/canaries/manage');
 proxyGet('/api/policy', '/v1/phaseone/policy');
 proxyGet('/api/policy/raw', '/v1/phaseone/policy/raw');
 proxyGet('/api/secrets/patterns', '/v1/phaseone/secrets/patterns');
 proxyGet('/api/health/detail', '/v1/phaseone/health/detail');
 proxyGet('/api/export/preview', '/v1/phaseone/export/preview');
 proxyGet('/api/permissions', '/v1/phaseone/permissions/analyze?agent_id=policy-default');
+proxyGet('/api/audit', '/v1/phaseone/audit');
+proxyGet('/api/rules', '/v1/phaseone/rules');
+proxyGet('/api/a2a/trust', '/v1/phaseone/a2a/trust');
+proxyGet('/api/alerts/config', '/v1/phaseone/alerts/config');
+proxyGet('/api/metrics', '/v1/phaseone/metrics');
 
 app.get('/api/sessions/:id/timeline', async (c) => {
   const auth = gate(c);
@@ -209,6 +277,11 @@ app.get('/api/sessions/:id/replay', async (c) => {
 app.get('/api/sessions/:id/export.jsonl', async (c) => {
   const auth = gate(c);
   if (!auth.ok) return c.json({ error: auth.error }, 401);
+  await recordAudit({
+    actor_email: auth.email,
+    action: 'export',
+    resource: `session:${c.req.param('id')}`,
+  }).catch(() => undefined);
   const { status, raw, contentType } = await gw(`/v1/phaseone/sessions/${c.req.param('id')}/export.jsonl`);
   return c.body(raw ?? '', status as 200, {
     'content-type': contentType || 'application/x-ndjson',
@@ -219,6 +292,9 @@ app.get('/api/sessions/:id/export.jsonl', async (c) => {
 app.get('/api/export/events.jsonl', async (c) => {
   const auth = gate(c);
   if (!auth.ok) return c.json({ error: auth.error }, 401);
+  await recordAudit({ actor_email: auth.email, action: 'export', resource: 'events.jsonl' }).catch(
+    () => undefined
+  );
   const q = c.req.url.includes('?') ? '?' + c.req.url.split('?')[1] : '';
   const { status, raw, contentType } = await gw(`/v1/phaseone/export/events.jsonl${q}`);
   return c.body(raw ?? '', status as 200, {
@@ -237,55 +313,95 @@ app.get('/api/events', async (c) => {
 
 app.post('/api/approvals/:id/approve', async (c) => {
   const auth = requireMutatingAuth(c);
-  if (!auth.ok) return c.json({ error: auth.error }, 401);
+  if (!auth.ok) return c.json({ error: auth.error }, auth.status);
   const body = await c.req.json().catch(() => ({}));
   const { status, data } = await gw(`/v1/phaseone/approvals/${c.req.param('id')}/approve`, {
     method: 'POST',
     body: JSON.stringify({ ...body, resolved_by: auth.email }),
   });
+  await recordAudit({
+    actor_email: auth.email,
+    action: 'approve',
+    resource: c.req.param('id'),
+  }).catch(() => undefined);
   return c.json(data, status as 200);
 });
 
 app.post('/api/approvals/:id/deny', async (c) => {
   const auth = requireMutatingAuth(c);
-  if (!auth.ok) return c.json({ error: auth.error }, 401);
+  if (!auth.ok) return c.json({ error: auth.error }, auth.status);
   const body = await c.req.json().catch(() => ({}));
   const { status, data } = await gw(`/v1/phaseone/approvals/${c.req.param('id')}/deny`, {
     method: 'POST',
     body: JSON.stringify({ ...body, resolved_by: auth.email }),
   });
+  await recordAudit({
+    actor_email: auth.email,
+    action: 'deny',
+    resource: c.req.param('id'),
+  }).catch(() => undefined);
   return c.json(data, status as 200);
 });
 
 app.post('/api/export/webhook', async (c) => {
   const auth = requireMutatingAuth(c);
-  if (!auth.ok) return c.json({ error: auth.error }, 401);
+  if (!auth.ok) return c.json({ error: auth.error }, auth.status);
   const body = await c.req.json().catch(() => ({}));
   const { status, data } = await gw('/v1/phaseone/export/webhook', {
     method: 'POST',
     body: JSON.stringify(body),
   });
+  await recordAudit({ actor_email: auth.email, action: 'export', resource: 'webhook' }).catch(
+    () => undefined
+  );
   return c.json(data, status as 200);
 });
 
 app.put('/api/policy', async (c) => {
   const auth = requireMutatingAuth(c);
-  if (!auth.ok) return c.json({ error: auth.error }, 401);
-  const body = await c.req.json().catch(() => ({}));
+  if (!auth.ok) return c.json({ error: auth.error }, auth.status);
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
   const { status, data } = await gw('/v1/phaseone/policy', {
     method: 'PUT',
-    body: JSON.stringify(body),
+    body: JSON.stringify({ ...body, actor_email: auth.email }),
   });
   return c.json(data, status as 200);
 });
 
 app.post('/api/a2a/trust', async (c) => {
   const auth = requireMutatingAuth(c);
-  if (!auth.ok) return c.json({ error: auth.error }, 401);
+  if (!auth.ok) return c.json({ error: auth.error }, auth.status);
   const body = await c.req.json().catch(() => ({}));
   const { status, data } = await gw('/v1/phaseone/a2a/trust', {
     method: 'POST',
     body: JSON.stringify(body),
+  });
+  await recordAudit({
+    actor_email: auth.email,
+    action: 'a2a.trust',
+    detail: body as Record<string, unknown>,
+  }).catch(() => undefined);
+  return c.json(data, status as 200);
+});
+
+app.post('/api/canaries/rotate', async (c) => {
+  const auth = requireMutatingAuth(c);
+  if (!auth.ok) return c.json({ error: auth.error }, auth.status);
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const { status, data } = await gw('/v1/phaseone/canaries/rotate', {
+    method: 'POST',
+    body: JSON.stringify({ ...body, actor_email: auth.email }),
+  });
+  return c.json(data, status as 200);
+});
+
+app.post('/api/alerts/test', async (c) => {
+  const auth = requireMutatingAuth(c);
+  if (!auth.ok) return c.json({ error: auth.error }, auth.status);
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const { status, data } = await gw('/v1/phaseone/alerts/test', {
+    method: 'POST',
+    body: JSON.stringify({ ...body, actor_email: auth.email }),
   });
   return c.json(data, status as 200);
 });
@@ -296,5 +412,7 @@ app.get('/', (c) => {
 });
 
 console.log(`PhaseOne10841 Admin Console v${VERSION} — Veracity Integrity LLC`);
-console.log(`Dashboard on :${PORT} (gateway=${GATEWAY_URL}) auth=${authCfg.enabled} · https://VeracityIntegrity.com`);
+console.log(
+  `Dashboard on :${PORT} (gateway=${GATEWAY_URL}) auth=${authCfg.enabled} · https://VeracityIntegrity.com`
+);
 serve({ fetch: app.fetch, port: PORT, hostname: '0.0.0.0' });

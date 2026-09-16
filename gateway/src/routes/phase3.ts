@@ -20,6 +20,8 @@ import type { PolicyConfig } from '../../../policy/src/types.js';
 import { listCanaryFiles } from '../../../canaries/src/detector.js';
 import { listSecretPatternTypes } from '../../../shared/src/secrets.js';
 import type { GatewayConfig } from '../config.js';
+import { savePolicyYaml } from '../../../shared/src/policy-save.js';
+import { recordAudit } from '../../../shared/src/audit.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -30,27 +32,6 @@ function policyPath(cfg: GatewayConfig): string {
     join(__dirname, '../../../policy/default-policy.yaml')
   );
 }
-
-/** Safe YAML merge: only allow known top-level keys; reject shell/code injection via parse. */
-const ALLOWED_POLICY_KEYS = new Set([
-  'version',
-  'name',
-  'domains',
-  'tools',
-  'shell',
-  'filesystem',
-  'http',
-  'mcp',
-  'destructive',
-  'agent_spawn',
-  'secret_egress',
-  'canary',
-  'approval',
-  'siem',
-  'prompt_injection',
-  'a2a',
-  'permission_analyzer',
-]);
 
 export function registerPhase3Routes(app: Hono, cfg: GatewayConfig): void {
   app.get('/v1/phaseone/sessions/:id/replay', async (c) => {
@@ -152,38 +133,31 @@ export function registerPhase3Routes(app: Hono, cfg: GatewayConfig): void {
   });
 
   app.put('/v1/phaseone/policy', async (c) => {
-    const body = (await c.req.json()) as { yaml?: string; dry_run?: boolean };
+    const body = (await c.req.json()) as { yaml?: string; dry_run?: boolean; actor_email?: string };
     if (!body.yaml || typeof body.yaml !== 'string') {
       return c.json({ ok: false, error: 'yaml string required' }, 400);
     }
-    if (body.yaml.length > 200_000) {
-      return c.json({ ok: false, error: 'yaml too large' }, 400);
-    }
-    let parsed: PolicyConfig;
-    try {
-      parsed = YAML.parse(body.yaml) as PolicyConfig;
-    } catch (err) {
-      return c.json({ ok: false, error: `invalid YAML: ${err instanceof Error ? err.message : 'parse error'}` }, 400);
-    }
-    if (!parsed || typeof parsed !== 'object') {
-      return c.json({ ok: false, error: 'policy must be a mapping' }, 400);
-    }
-    for (const key of Object.keys(parsed)) {
-      if (!ALLOWED_POLICY_KEYS.has(key)) {
-        return c.json({ ok: false, error: `disallowed policy key: ${key}` }, 400);
-      }
-    }
-    if (!parsed.version || !parsed.name) {
-      return c.json({ ok: false, error: 'version and name required' }, 400);
+    const path = policyPath(cfg);
+    const result = savePolicyYaml(path, body.yaml, {
+      dry_run: body.dry_run,
+      actor: body.actor_email ?? 'dashboard',
+    });
+    if (!result.ok) {
+      return c.json(result, 400);
     }
     if (body.dry_run) {
-      return c.json({ ok: true, dry_run: true, parsed });
+      return c.json(result);
     }
-    const path = policyPath(cfg);
-    const stamped = `# Updated by PhaseOne10841 admin UI — Veracity Integrity LLC\n# ${new Date().toISOString()}\n` + body.yaml.trim() + '\n';
-    writeFileSync(path, stamped, 'utf8');
     loadPolicy(path);
-    return c.json({ ok: true, path, parsed: getPolicy() });
+    if (body.actor_email) {
+      await recordAudit({
+        actor_email: body.actor_email,
+        action: 'policy.save',
+        resource: path,
+        detail: { backup: result.backup },
+      }).catch(() => undefined);
+    }
+    return c.json({ ok: true, path, parsed: getPolicy(), backup: result.backup });
   });
 
   /** A2A trust admin — update in-memory/policy a2a lists via safe YAML merge */

@@ -29,7 +29,12 @@ export type EventType =
   | 'siem.export'
   | 'siem.webhook'
   | 'session.start'
-  | 'session.end';
+  | 'session.end'
+  | 'admin.audit'
+  | 'detection.rule_hit'
+  | 'alert.sent'
+  | 'canary.rotated'
+  | 'policy.saved';
 
 export type PolicyAction = 'allow' | 'deny' | 'require_approval' | 'quarantine';
 

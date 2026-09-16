@@ -16,6 +16,7 @@ import {
   validateCsrf,
   createSession,
 } from '../dashboard/src/auth.js';
+import { canMutate } from '../shared/src/rbac.js';
 
 describe('auth OTP (harness, no SMTP)', () => {
   const prev = { ...process.env };
@@ -93,4 +94,18 @@ describe('auth OTP (harness, no SMTP)', () => {
     const r = checkOtpRateLimit('admin@veracityintegrity.com', cfg);
     expect(r.ok).toBe(true);
   });
+
+  it('viewer emails get viewer role (read-only)', async () => {
+    process.env.PHASEONE_VIEWER_EMAILS = 'viewer@localhost';
+    process.env.PHASEONE_ADMIN_EMAILS = 'admin@veracityintegrity.com';
+    __testResetAuthState();
+    const cfg = loadAuthConfig();
+    expect(isEmailAllowlisted('viewer@localhost', cfg)).toBe(true);
+    await requestOtp('viewer@localhost', cfg);
+    const code = __testGetLastOtp()!.code;
+    const verified = verifyOtp('viewer@localhost', code, cfg);
+    expect(verified.session?.role).toBe('viewer');
+    expect(canMutate(verified.session!.role)).toBe(false);
+  });
+
 });

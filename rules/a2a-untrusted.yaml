@@ -1,0 +1,15 @@
+id: phaseone.a2a.untrusted
+title: A2A message from untrusted or quarantined peer
+description: Agent-to-agent traffic with low trust or quarantine action.
+status: stable
+level: high
+enabled: true
+logsource:
+  product: PhaseOne10841
+detection:
+  selection_any:
+    - event_type: a2a.blocked
+    - event_type: a2a.quarantined
+    - a2a_trust: QUARANTINED
+    - a2a_trust: REMOTE-UNKNOWN
+  condition: selection_any

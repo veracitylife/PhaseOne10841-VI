@@ -61,6 +61,8 @@ describe('onboard installer', () => {
     expect(body).toContain('DASHBOARD_PORT=');
     expect(body).toContain('UPSTREAM_PROVIDER=mock');
     expect(body).toContain('PHASEONE_APPROVAL_TIMEOUT_MS=');
+    expect(body).toContain('PHASEONE_RULES_DIR=');
+    expect(body).toContain('PHASEONE_METRICS_ENABLED=');
     expect(body).toContain('Veracity Integrity LLC');
     expect(body).toMatch(/PHASEONE_SESSION_SECRET=[a-f0-9]{64}/);
   });
