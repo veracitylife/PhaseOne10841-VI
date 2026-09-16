@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Product Demo — PhaseOne10841 | Veracity Integrity</title>
+  <meta name="description" content="Walk through how PhaseOne10841 works: gateway proxy, policy YAML, MFA dashboard, session replay, canaries, A2A firewall, human approval, SIEM export, and lab harness. Defensive only." />
+  <meta name="robots" content="index,follow" />
+  <link rel="canonical" href="https://phaseone10841.me/demo.html" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://phaseone10841.me/demo.html" />
+  <meta property="og:title" content="PhaseOne10841 Product Demo" />
+  <meta property="og:description" content="Defensive Agent Security Gateway walkthrough — gateway, policy, replay, canaries, MFA dashboard." />
+  <meta property="og:site_name" content="PhaseOne10841" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header" id="top">
+    <div class="container nav-wrap">
+      <a class="brand" href="/" aria-label="PhaseOne10841 home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+            <rect x="2" y="2" width="28" height="28" rx="6" stroke="currentColor" stroke-width="1.5" opacity="0.35"/>
+            <path d="M8 22V10h4.2c2.6 0 4.2 1.4 4.2 3.6 0 1.5-.8 2.7-2.1 3.2L18.5 22h-3.2l-3.4-4.8H11V22H8zm3-7.2h1.1c1.1 0 1.8-.6 1.8-1.5S13.2 12 12.1 12H11v2.8zM20 22l3.2-12h3.1L29.5 22h-3.1l-.5-2.1h-3.3L22.1 22H20zm4.2-4.5h2.2l-1.1-4.2-1.1 4.2z" fill="currentColor"/>
+          </svg>
+        </span>
+        <span class="brand-text">
+          <strong>PhaseOne10841</strong>
+          <span class="brand-sub">Agent EDR</span>
+        </span>
+      </a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" aria-label="Open menu">
+        <span></span><span></span><span></span>
+      </button>
+      <nav class="site-nav" id="site-nav" aria-label="Primary">
+        <a href="/#why">Why</a>
+        <a href="/#capabilities">Capabilities</a>
+        <a href="/demo.html" aria-current="page">Demo</a>
+        <a href="/sales.html">Sales</a>
+        <a href="https://github.com/veracitylife/PhaseOne10841-VI" rel="noopener noreferrer" target="_blank">GitHub</a>
+        <a class="btn btn-sm btn-primary" href="mailto:info@veracityintegrity.com?subject=PhaseOne10841%20Early%20Access">Request early access</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="page-hero">
+      <div class="hero-grid" aria-hidden="true"></div>
+      <div class="container page-hero-inner">
+        <p class="eyebrow">Product demonstration · Defensive only</p>
+        <h1>How PhaseOne10841 works</h1>
+        <p class="lead">
+          A step-by-step walkthrough of the Defensive Agent Security Gateway—
+          from proxying agent traffic to policy, replay, canaries, approvals, and SIEM.
+          Illustrative UI panels only; no exploit steps or attack payloads.
+        </p>
+        <div class="hero-ctas">
+          <a class="btn btn-primary" href="mailto:info@veracityintegrity.com?subject=PhaseOne10841%20Early%20Access">Request early access</a>
+          <a class="btn btn-ghost" href="/sales.html">Sales &amp; early access</a>
+          <a class="btn btn-ghost" href="https://github.com/veracitylife/PhaseOne10841-VI" rel="noopener noreferrer" target="_blank">View on GitHub</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="walkthrough">
+      <div class="container">
+        <p class="section-label">Walkthrough</p>
+        <h2>Nine building blocks of Agent EDR</h2>
+        <p class="section-intro">Each step shows a defensive control that sits <em>outside</em> the model.</p>
+
+        <div class="steps">
+          <!-- 1 Gateway -->
+          <article class="step">
+            <div class="step-copy">
+              <span class="step-num">1</span>
+              <h3>Gateway proxy</h3>
+              <p>
+                Agents and SDKs point at PhaseOne10841 instead of the upstream LLM.
+                The OpenAI-compatible gateway applies middleware on chat completions,
+                tool calls, and peer messages before anything reaches tools or models.
+              </p>
+              <ul>
+                <li>Single control plane for LangChain, CrewAI, OpenAI SDK, and adapters</li>
+                <li>Policy, scanners, and recording run on every request path</li>
+                <li>Upstream stays configurable (OpenAI, Ollama, OpenRouter, mock)</li>
+              </ul>
+            </div>
+            <div class="step-visual">
+              <div class="mock-ui" aria-hidden="true">
+                <div class="mock-chrome">
+                  <span class="mock-dot r"></span><span class="mock-dot y"></span><span class="mock-dot g"></span>
+                  <span class="mock-title">gateway · :8080</span>
+                </div>
+                <div class="mock-body">
+                  <div class="mock-row active">
+                    <span class="mock-label">POST /v1/chat/completions</span>
+                    <span class="mock-badge ok">proxied</span>
+                  </div>
+                  <div class="mock-row">
+                    <span class="mock-label">tool_call · http_fetch</span>
+                    <span class="mock-badge warn">policy check</span>
+                  </div>
+                  <div class="mock-row">
+                    <span class="mock-label">a2a · peer message</span>
+                    <span class="mock-badge info">scanned</span>
+                  </div>
+                  <pre class="mock-code">Agents / SDKs ──► Gateway
+                    ├─ policy YAML
+                    ├─ injection scanner
+                    └─ recorder → Postgres</pre>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <!-- 2 Policy -->
+          <article class="step reverse">
+            <div class="step-copy">
+              <span class="step-num">2</span>
+              <h3>Policy YAML</h3>
+              <p>
+                Operators express intent in YAML: domain default-deny, shell deny-by-default,
+                filesystem roots, MCP allowlists, secret egress rules, and approval timeouts.
+                Invalid or disallowed keys are rejected on save.
+              </p>
+              <ul>
+                <li>Destructive tools route to human approval</li>
+                <li>Validated save path with previous-version backup</li>
+                <li>Detection rules live alongside policy in versioned files</li>
+              </ul>
+            </div>
+            <div class="step-visual">
+              <div class="mock-ui" aria-hidden="true">
+                <div class="mock-chrome">
+                  <span class="mock-dot r"></span><span class="mock-dot y"></span><span class="mock-dot g"></span>
+                  <span class="mock-title">policy.yaml · editor</span>
+                </div>
+                <div class="mock-body">
+                  <pre class="mock-code">domains:
+  default: deny
+  allow:
+    - api.internal.example
+shell:
+  default: deny
+tools:
+  destructive: require_approval
+mcp:
+  allowlist:
+    - docs-search
+secret_egress: block
+approval:
+  timeout_seconds: 900</pre>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <!-- 3 MFA dashboard -->
+          <article class="step">
+            <div class="step-copy">
+              <span class="step-num">3</span>
+              <h3>MFA dashboard</h3>
+              <p>
+                Admins sign in with email OTP. The console surfaces incidents, session replay,
+                pending approvals, policy, agents, canaries, SIEM export, and lab status—
+                with lightweight RBAC (admin vs viewer).
+              </p>
+              <ul>
+                <li>Email one-time passcodes; rate-limited OTP requests</li>
+                <li>Admin audit log for login, approve/deny, policy save, export</li>
+                <li>Ops views for health, retention, and rate-limit notes</li>
+              </ul>
+            </div>
+            <div class="step-visual">
+              <div class="mock-ui" aria-hidden="true">
+                <div class="mock-chrome">
+                  <span class="mock-dot r"></span><span class="mock-dot y"></span><span class="mock-dot g"></span>
+                  <span class="mock-title">dashboard · :3000 · MFA</span>
+                </div>
+                <div class="mock-sidebar-layout">
+                  <div class="mock-sidebar">
+                    <span class="active">Incidents</span>
+                    <span>Replay</span>
+                    <span>Approvals</span>
+                    <span>Policy</span>
+                    <span>Canaries</span>
+                    <span>SIEM</span>
+                    <span>Lab</span>
+                  </div>
+                  <div class="mock-body">
+                    <div class="mock-row active">
+                      <span class="mock-label">CANARY_TOUCH</span>
+                      <span class="mock-badge block">high</span>
+                    </div>
+                    <div class="mock-row">
+                      <span class="mock-label">INJECTION_BLOCK</span>
+                      <span class="mock-badge warn">medium</span>
+                    </div>
+                    <div class="mock-row">
+                      <span class="mock-label">APPROVAL_PENDING</span>
+                      <span class="mock-badge info">awaiting</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <!-- 4 Session replay -->
+          <article class="step reverse">
+            <div class="step-copy">
+              <span class="step-num">4</span>
+              <h3>Session replay</h3>
+              <p>
+                Every gated interaction is recorded to Postgres. Deep session replay lets
+                operators reconstruct the chain of prompts, tool decisions, policy hits,
+                and approvals—useful for incident review and compliance.
+              </p>
+              <ul>
+                <li>Event store with session continuity</li>
+                <li>Redaction for secrets on egress paths</li>
+                <li>Export-friendly records for SOC handoff</li>
+              </ul>
+            </div>
+            <div class="step-visual">
+              <div class="mock-ui" aria-hidden="true">
+                <div class="mock-chrome">
+                  <span class="mock-dot r"></span><span class="mock-dot y"></span><span class="mock-dot g"></span>
+                  <span class="mock-title">replay · session_7f3a</span>
+                </div>
+                <div class="mock-body">
+                  <ul class="mock-timeline">
+                    <li><strong>chat.completion</strong> agent → gateway → upstream</li>
+                    <li><strong>tool.evaluate</strong> http_fetch · domain allow</li>
+                    <li><strong>policy.hit</strong> secret_egress · redacted</li>
+                    <li><strong>approval.resolve</strong> human · allow · noted</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <!-- 5 Canaries -->
+          <article class="step">
+            <div class="step-copy">
+              <span class="step-num">5</span>
+              <h3>Canaries</h3>
+              <p>
+                Harmless marker files act as tripwires. If an agent or process touches them
+                unexpectedly, PhaseOne10841 raises a high-severity signal—without storing
+                real secrets in the markers.
+              </p>
+              <ul>
+                <li>List, safely rotate, and review last trigger from the dashboard</li>
+                <li>Optional webhook alert on canary events</li>
+                <li>Complements filesystem root policy</li>
+              </ul>
+            </div>
+            <div class="step-visual">
+              <div class="mock-ui" aria-hidden="true">
+                <div class="mock-chrome">
+                  <span class="mock-dot r"></span><span class="mock-dot y"></span><span class="mock-dot g"></span>
+                  <span class="mock-title">canaries · markers</span>
+                </div>
+                <div class="mock-body">
+                  <div class="mock-row">
+                    <span class="mock-label">.phaseone-canary-a</span>
+                    <span class="mock-badge ok">quiet</span>
+                  </div>
+                  <div class="mock-row active">
+                    <span class="mock-label">.phaseone-canary-b</span>
+                    <span class="mock-badge block">touched</span>
+                  </div>
+                  <div class="mock-row">
+                    <span class="mock-label">last rotate</span>
+                    <span class="mock-value">2h ago</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <!-- 6 A2A -->
+          <article class="step reverse">
+            <div class="step-copy">
+              <span class="step-num">6</span>
+              <h3>A2A firewall</h3>
+              <p>
+                Agent-to-agent peer messages pass through trust levels and injection scanning.
+                Operators can list and set trust from the admin API and settings UI so
+                multi-agent coordination does not bypass the gateway.
+              </p>
+              <ul>
+                <li>Trust tiers for known vs untrusted peers</li>
+                <li>Injection patterns scanned on peer content</li>
+                <li>Events recorded like any other gated path</li>
+              </ul>
+            </div>
+            <div class="step-visual">
+              <div class="mock-ui" aria-hidden="true">
+                <div class="mock-chrome">
+                  <span class="mock-dot r"></span><span class="mock-dot y"></span><span class="mock-dot g"></span>
+                  <span class="mock-title">a2a · trust map</span>
+                </div>
+                <div class="mock-body">
+                  <div class="mock-row">
+                    <span class="mock-label">agent.planner</span>
+                    <span class="mock-badge ok">trusted</span>
+                  </div>
+                  <div class="mock-row">
+                    <span class="mock-label">agent.researcher</span>
+                    <span class="mock-badge info">limited</span>
+                  </div>
+                  <div class="mock-row active">
+                    <span class="mock-label">peer.unknown</span>
+                    <span class="mock-badge block">deny / scan</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <!-- 7 Human approval -->
+          <article class="step">
+            <div class="step-copy">
+              <span class="step-num">7</span>
+              <h3>Human approval</h3>
+              <p>
+                When policy marks a tool as destructive, the gateway holds the action until
+                a human resolves it—with risk, reason, expiry, and notes. Timeouts expire
+                pending requests safely rather than auto-approving.
+              </p>
+              <ul>
+                <li>Approve or deny from the MFA dashboard</li>
+                <li>Audit trail of every resolution</li>
+                <li>Optional alert on approval timeout</li>
+              </ul>
+            </div>
+            <div class="step-visual">
+              <div class="mock-ui" aria-hidden="true">
+                <div class="mock-chrome">
+                  <span class="mock-dot r"></span><span class="mock-dot y"></span><span class="mock-dot g"></span>
+                  <span class="mock-title">approvals · queue</span>
+                </div>
+                <div class="mock-body">
+                  <div class="mock-row active">
+                    <span class="mock-label">fs.delete · /data/export</span>
+                    <span class="mock-badge warn">pending</span>
+                  </div>
+                  <div class="mock-row">
+                    <span class="mock-label">risk</span>
+                    <span class="mock-value">high · expires 12m</span>
+                  </div>
+                  <div class="mock-row">
+                    <span class="mock-label">reason</span>
+                    <span class="mock-value">destructive tool</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <!-- 8 SIEM -->
+          <article class="step reverse">
+            <div class="step-copy">
+              <span class="step-num">8</span>
+              <h3>SIEM export</h3>
+              <p>
+                Feed your existing SOC stack. PhaseOne10841 emits ECS-style JSONL for
+                download and optional webhook sinks for canary, injection-blocked, and
+                approval-timeout events—plus Prometheus metrics on the gateway.
+              </p>
+              <ul>
+                <li>JSONL download from the dashboard</li>
+                <li>Webhook alerting hooks</li>
+                <li><code>/metrics</code> for operational visibility</li>
+              </ul>
+            </div>
+            <div class="step-visual">
+              <div class="mock-ui" aria-hidden="true">
+                <div class="mock-chrome">
+                  <span class="mock-dot r"></span><span class="mock-dot y"></span><span class="mock-dot g"></span>
+                  <span class="mock-title">siem · jsonl export</span>
+                </div>
+                <div class="mock-body">
+                  <pre class="mock-code">{"@timestamp":"2026-09-16T14:02:11Z",
+ "event.action":"canary_touch",
+ "event.severity":"high",
+ "agent.id":"lab-runner-01",
+ "observer.name":"phaseone10841"}</pre>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <!-- 9 Lab -->
+          <article class="step">
+            <div class="step-copy">
+              <span class="step-num">9</span>
+              <h3>Lab harness</h3>
+              <p>
+                Validate detectors with inert fake services and labeled TEST fixtures.
+                The lab is for defensive detector validation only—no live exploit targets,
+                payloads, or unauthorized-access tooling.
+              </p>
+              <ul>
+                <li>Stub services for safe practice runs</li>
+                <li>Labeled fixtures exercise scanners and rules</li>
+                <li>Smoke tests after <code>docker compose up</code></li>
+              </ul>
+            </div>
+            <div class="step-visual">
+              <div class="mock-ui" aria-hidden="true">
+                <div class="mock-chrome">
+                  <span class="mock-dot r"></span><span class="mock-dot y"></span><span class="mock-dot g"></span>
+                  <span class="mock-title">lab · harness status</span>
+                </div>
+                <div class="mock-body">
+                  <div class="mock-row">
+                    <span class="mock-label">stubs</span>
+                    <span class="mock-badge ok">inert</span>
+                  </div>
+                  <div class="mock-row">
+                    <span class="mock-label">fixtures</span>
+                    <span class="mock-badge info">TEST labeled</span>
+                  </div>
+                  <div class="mock-row">
+                    <span class="mock-label">mode</span>
+                    <span class="mock-value">defensive validation</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta-band" id="next">
+      <div class="container">
+        <h2>Ready to evaluate PhaseOne10841?</h2>
+        <p>
+          Request early access from Veracity Integrity, explore sales options,
+          or review the source on GitHub.
+        </p>
+        <div class="hero-ctas" style="justify-content:center">
+          <a class="btn btn-primary" href="mailto:info@veracityintegrity.com?subject=PhaseOne10841%20Early%20Access">Request early access</a>
+          <a class="btn btn-ghost" href="/sales.html">Sales &amp; early access</a>
+          <a class="btn btn-ghost" href="mailto:support@veracityintegrity.com">Email support</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section company" id="company">
+      <div class="container company-inner">
+        <div>
+          <p class="section-label">Company</p>
+          <h2>Veracity Integrity LLC</h2>
+          <p>
+            PhaseOne10841 is a product of Veracity Integrity LLC—building defensive
+            integrity controls for modern agentic systems.
+          </p>
+          <a class="btn btn-primary" href="https://VeracityIntegrity.com" rel="noopener noreferrer" target="_blank">Visit VeracityIntegrity.com</a>
+        </div>
+        <address class="company-card">
+          <p><strong>Veracity Integrity LLC</strong></p>
+          <p>7533 S Center View Ct Ste R<br />West Jordan, UT 84084</p>
+          <p>Phone: <a href="tel:+1888646790">+1-888-64-6790</a></p>
+          <p>WhatsApp: <a href="https://wa.me/18083656628" rel="noopener noreferrer" target="_blank">+1 (808) 365-6628</a></p>
+          <p><a href="mailto:info@veracityintegrity.com">info@veracityintegrity.com</a></p>
+          <p><a href="mailto:support@veracityintegrity.com">support@veracityintegrity.com</a></p>
+        </address>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div>
+        <strong>PhaseOne10841</strong>
+        <p class="muted">Defensive Agent Security Gateway</p>
+        <p class="muted">A product of <a href="https://VeracityIntegrity.com">Veracity Integrity LLC</a></p>
+        <p class="muted"><a href="https://github.com/veracitylife/PhaseOne10841-VI" rel="noopener noreferrer" target="_blank">GitHub</a></p>
+        <p class="muted"><a href="/demo.html">Demo</a> · <a href="/sales.html">Sales</a></p>
+      </div>
+      <div>
+        <p class="footer-heading">Contact</p>
+        <p><a href="mailto:info@veracityintegrity.com">info@veracityintegrity.com</a></p>
+        <p><a href="mailto:support@veracityintegrity.com">support@veracityintegrity.com</a></p>
+        <p><a href="tel:+1888646790">+1-888-64-6790</a></p>
+        <p>WhatsApp <a href="https://wa.me/18083656628" rel="noopener noreferrer" target="_blank">+1 (808) 365-6628</a></p>
+      </div>
+      <div>
+        <p class="footer-heading">Legal</p>
+        <p class="notice">
+          DEFENSIVE ONLY. This site and product describe protective controls for
+          autonomous agents. They do not include exploit steps, attack proofs of
+          concept, payloads, or instructions for unauthorized access.
+        </p>
+      </div>
+    </div>
+    <div class="container footer-bottom">
+      <p>© 2026 Veracity Integrity LLC. All rights reserved.</p>
+      <a href="#top">Back to top</a>
+    </div>
+  </footer>
+
+  <script src="/script.js" defer></script>
+</body>
+</html>

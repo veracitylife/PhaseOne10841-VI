@@ -4,6 +4,8 @@
  */
 import type { MiddlewareHandler } from 'hono';
 import { randomBytes } from 'node:crypto';
+import { SECURITY_HEADERS } from '../../../shared/src/security-headers.js';
+import { apiRateLimitMiddleware } from './rate-limit.js';
 
 export const requestIdMiddleware: MiddlewareHandler = async (c, next) => {
   const incoming = c.req.header('x-request-id') ?? c.req.header('x-phaseone-request-id');
@@ -17,10 +19,9 @@ export const requestIdMiddleware: MiddlewareHandler = async (c, next) => {
 
 export const securityHeadersMiddleware: MiddlewareHandler = async (c, next) => {
   await next();
-  c.header('X-Content-Type-Options', 'nosniff');
-  c.header('X-Frame-Options', 'DENY');
-  c.header('Referrer-Policy', 'no-referrer');
-  c.header('X-PhaseOne-Site', 'https://VeracityIntegrity.com');
+  for (const [k, v] of Object.entries(SECURITY_HEADERS)) {
+    c.header(k, v);
+  }
   // Avoid caching sensitive admin/API responses by default
   if (c.req.path.startsWith('/v1/phaseone')) {
     c.header('Cache-Control', 'no-store');
@@ -32,4 +33,5 @@ export function registerGatewayMiddleware(app: {
 }): void {
   app.use('*', requestIdMiddleware);
   app.use('*', securityHeadersMiddleware);
+  app.use('*', apiRateLimitMiddleware());
 }

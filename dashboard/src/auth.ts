@@ -82,7 +82,7 @@ export function loadAuthConfig(): AuthConfig {
     otpTtlMs: Number(process.env.PHASEONE_OTP_TTL_MS ?? 10 * 60 * 1000),
     otpLength: 6,
     maxOtpAttempts: 5,
-    rateLimitWindowMs: 15 * 60 * 1000,
+    rateLimitWindowMs: Number(process.env.PHASEONE_OTP_RATE_WINDOW_MS ?? 15 * 60 * 1000),
     rateLimitMax: Number(process.env.PHASEONE_OTP_RATE_LIMIT ?? 5),
     cookieName: 'phaseone_session',
     csrfCookieName: 'phaseone_csrf',

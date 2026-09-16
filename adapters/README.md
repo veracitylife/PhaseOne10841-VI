@@ -6,24 +6,90 @@ Product: [PhaseOne10841](https://phaseone10841.me) by [Veracity Integrity LLC](h
 
 > No offensive tooling. These adapters only document how to route traffic through the gateway for policy enforcement, recording, and detection.
 
-## OpenAI-compatible (supported)
+## Quick start — point any OpenAI client through PhaseOne
 
-Any OpenAI SDK client can target the gateway:
+After `docker compose up`:
+
+```bash
+# Gateway OpenAI-compatible base
+export OPENAI_BASE_URL=http://localhost:8080/v1
+export OPENAI_API_KEY=unused-for-mock
+```
+
+### OpenAI Node SDK (copy-paste)
 
 ```ts
 import OpenAI from 'openai';
 
 const client = new OpenAI({
   baseURL: 'http://localhost:8080/v1',
-  apiKey: 'unused-for-mock',
+  apiKey: 'unused-for-mock', // mock upstream ignores; real keys only needed if UPSTREAM_PROVIDER=openai
   defaultHeaders: {
     'X-PhaseOne-Agent-Id': 'my-agent',
     'X-PhaseOne-Session-Id': crypto.randomUUID(),
   },
 });
+
+const completion = await client.chat.completions.create({
+  model: 'phaseone-mock',
+  messages: [{ role: 'user', content: 'Hello via PhaseOne' }],
+});
+console.log(completion.choices[0]?.message);
 ```
 
-See also `examples/sample-client.ts` and `adapters/openai-compatible.ts`.
+### curl (copy-paste)
+
+```bash
+curl -s http://localhost:8080/v1/chat/completions \
+  -H 'content-type: application/json' \
+  -H 'X-PhaseOne-Agent-Id: my-agent' \
+  -H "X-PhaseOne-Session-Id: $(uuidgen || cat /proc/sys/kernel/random/uuid)" \
+  -d '{
+    "model": "phaseone-mock",
+    "messages": [{"role":"user","content":"Hello via PhaseOne"}]
+  }'
+```
+
+### Python openai package (copy-paste)
+
+```python
+from openai import OpenAI
+import uuid
+
+client = OpenAI(
+    base_url="http://localhost:8080/v1",
+    api_key="unused-for-mock",
+    default_headers={
+        "X-PhaseOne-Agent-Id": "my-agent",
+        "X-PhaseOne-Session-Id": str(uuid.uuid4()),
+    },
+)
+print(client.chat.completions.create(
+    model="phaseone-mock",
+    messages=[{"role": "user", "content": "Hello via PhaseOne"}],
+))
+```
+
+Helper: `adapters/openai-compatible.ts` → `phaseOneOpenAIConfig()`.
+
+Also see `examples/sample-client.ts`.
+
+## Tool enforcement hook (any framework)
+
+Before performing a side-effecting tool, ask the gateway:
+
+```bash
+curl -s http://localhost:8080/v1/phaseone/tools/enforce \
+  -H 'content-type: application/json' \
+  -d '{
+    "agent_id": "my-agent",
+    "tool_name": "run_shell",
+    "arguments": {"command": "ls -la"},
+    "wait_for_approval": false
+  }'
+```
+
+Only proceed when `"allowed": true`. Destructive tools may return `202` with `pending_approval`.
 
 ## LangChain (stub)
 
@@ -46,7 +112,14 @@ Thin helper: `adapters/langchain-stub.ts`.
 
 ## CrewAI (stub)
 
-Configure the LLM provider base URL to `http://localhost:8080/v1` (OpenAI-compatible).  
+Configure the LLM provider base URL to `http://localhost:8080/v1` (OpenAI-compatible).
+
+```python
+# Conceptual CrewAI / LiteLLM-style base URL override
+# openai_api_base = "http://localhost:8080/v1"
+# headers: X-PhaseOne-Agent-Id per crew agent
+```
+
 Register each crew agent id via `X-PhaseOne-Agent-Id`. Use A2A firewall (`POST /v1/phaseone/a2a/message`) when agents message each other.
 
 Thin helper: `adapters/crewai-stub.ts`.
@@ -67,3 +140,8 @@ Thin helper: `adapters/claude-tool-proxy-stub.ts`.
 |----------|---------|
 | `PHASEONE_GATEWAY_URL` | Default `http://localhost:8080` |
 | `PHASEONE_AGENT_ID` | Default agent id header |
+| `UPSTREAM_PROVIDER` | Gateway-side: `mock` \| `openai` \| `ollama` \| `openrouter` |
+
+## OpenAPI
+
+Full gateway + admin surface: [`docs/openapi.yaml`](../docs/openapi.yaml)

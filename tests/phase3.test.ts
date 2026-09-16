@@ -100,7 +100,8 @@ describe('SIEM JSONL + webhook export', () => {
     expect(result.ok).toBe(true);
     expect(result.sent).toBe(1);
     expect(fetchImpl).toHaveBeenCalledOnce();
-    const init = fetchImpl.mock.calls[0][1] as RequestInit;
+    const call = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    const init = call[1];
     const body = JSON.parse(String(init.body));
     expect(body.vendor).toBe('Veracity Integrity LLC');
     expect(body.format).toBe('ecs-ish');

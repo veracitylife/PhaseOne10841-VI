@@ -1,6 +1,14 @@
+# PhaseOne10841 v0.5 — production-ish local profile
+# Veracity Integrity LLC · https://VeracityIntegrity.com
+#
+# Resource limits (optional notes for operators):
+#   Uncomment deploy.resources below under Swarm/Compose v3+, or use
+#   `docker compose --compatibility` / cgroup limits in your runtime.
+#   Suggested starting points: gateway 512M / 1 CPU, dashboard 256M / 0.5 CPU, postgres 512M.
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: phaseone
       POSTGRES_PASSWORD: phaseone
@@ -17,9 +25,18 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 5s
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: "1.0"
+    #       memory: 512M
 
   gateway:
     build: .
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: false
     command: ["tsx", "gateway/src/index.ts"]
     environment:
       DATABASE_URL: postgres://phaseone:phaseone@postgres:5432/phaseone
@@ -36,6 +53,10 @@ services:
       PHASEONE_ALERT_WEBHOOK_URL: ${PHASEONE_ALERT_WEBHOOK_URL:-}
       PHASEONE_RULES_DIR: /app/rules
       PHASEONE_METRICS_ENABLED: ${PHASEONE_METRICS_ENABLED:-true}
+      PHASEONE_RETENTION_DAYS: ${PHASEONE_RETENTION_DAYS:-30}
+      PHASEONE_API_RATE_LIMIT: ${PHASEONE_API_RATE_LIMIT:-120}
+      PHASEONE_API_RATE_WINDOW_MS: ${PHASEONE_API_RATE_WINDOW_MS:-60000}
+      NODE_ENV: production
     ports:
       - "8080:8080"
     volumes:
@@ -50,12 +71,19 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 15s
+      start_period: 20s
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: "1.0"
+    #       memory: 512M
 
   dashboard:
     build: .
+    restart: unless-stopped
+    user: "1000:1000"
     command: ["tsx", "dashboard/src/server.ts"]
     environment:
       DASHBOARD_PORT: "3000"
@@ -65,14 +93,19 @@ services:
       PHASEONE_VIEWER_EMAILS: ${PHASEONE_VIEWER_EMAILS:-}
       PHASEONE_SESSION_SECRET: ${PHASEONE_SESSION_SECRET:-dev-only-change-me}
       PHASEONE_OTP_FALLBACK_FILE: ${PHASEONE_OTP_FALLBACK_FILE:-/tmp/phaseone-otp.log}
+      PHASEONE_SECURE_COOKIES: ${PHASEONE_SECURE_COOKIES:-false}
+      PHASEONE_OTP_RATE_LIMIT: ${PHASEONE_OTP_RATE_LIMIT:-5}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-noreply@veracityintegrity.com}
       SMTP_SECURE: ${SMTP_SECURE:-false}
+      NODE_ENV: production
     ports:
       - "3000:3000"
+    tmpfs:
+      - /tmp
     depends_on:
       gateway:
         condition: service_healthy
@@ -81,7 +114,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 10s
+      start_period: 15s
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: "0.5"
+    #       memory: 256M
 
 volumes:
   phaseone_pg:

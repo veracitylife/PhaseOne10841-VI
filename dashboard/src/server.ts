@@ -22,14 +22,27 @@ import {
 } from './auth.js';
 import { canMutate, type DashboardRole } from '../../shared/src/rbac.js';
 import { recordAudit } from '../../shared/src/audit.js';
+import {
+  SECURITY_HEADERS,
+  dashboardContentSecurityPolicy,
+  describeCookieDefaults,
+} from '../../shared/src/security-headers.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const GATEWAY_URL = process.env.GATEWAY_URL ?? 'http://gateway:8080';
 const PORT = Number(process.env.DASHBOARD_PORT ?? 3000);
-const VERSION = '0.4.0';
+const VERSION = '0.5.0';
 
 const app = new Hono();
 const authCfg = loadAuthConfig();
+
+app.use('*', async (c, next) => {
+  await next();
+  for (const [k, v] of Object.entries(SECURITY_HEADERS)) c.header(k, v);
+  c.header('Content-Security-Policy', dashboardContentSecurityPolicy());
+  if (c.req.path.startsWith('/api/')) c.header('Cache-Control', 'no-store');
+});
+
 
 async function gw(path: string, init?: RequestInit) {
   const res = await fetch(`${GATEWAY_URL}${path}`, {
@@ -255,6 +268,16 @@ proxyGet('/api/rules', '/v1/phaseone/rules');
 proxyGet('/api/a2a/trust', '/v1/phaseone/a2a/trust');
 proxyGet('/api/alerts/config', '/v1/phaseone/alerts/config');
 proxyGet('/api/metrics', '/v1/phaseone/metrics');
+proxyGet('/api/ops', '/v1/phaseone/ops');
+proxyGet('/api/retention', '/v1/phaseone/retention');
+proxyGet('/api/rate-limits', '/v1/phaseone/rate-limits');
+
+app.get('/api/security/cookies', (c) => {
+  const auth = gate(c);
+  if (!auth.ok) return c.json({ error: auth.error }, 401);
+  return c.json(describeCookieDefaults(authCfg.secureCookies));
+});
+
 
 app.get('/api/sessions/:id/timeline', async (c) => {
   const auth = gate(c);

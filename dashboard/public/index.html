@@ -111,7 +111,7 @@
   <header>
     <div>
       <h1>PhaseOne10841 <span class="badge">Agent EDR</span></h1>
-      <div class="sub">A product of <a href="https://VeracityIntegrity.com" target="_blank" rel="noopener">Veracity Integrity LLC</a> · v0.4</div>
+      <div class="sub">A product of <a href="https://VeracityIntegrity.com" target="_blank" rel="noopener">Veracity Integrity LLC</a> · v0.5</div>
     </div>
     <div class="row">
       <span class="sub" id="auth-email"></span> <span class="badge" id="auth-role"></span>
@@ -155,6 +155,7 @@
         <button data-view="rules">Detection rules</button>
         <button data-view="audit">Audit log</button>
         <button data-view="lab">Lab monitor</button>
+        <button data-view="ops">Ops / Phase 5</button>
         <button data-view="settings">Settings</button>
       </nav>
       <main>
@@ -288,11 +289,29 @@
           </div>
         </section>
 
+        <section id="view-ops" class="view hidden">
+          <div class="panel">
+            <h2>Ops — retention, rate limits, security</h2>
+            <p class="sub">Phase 5 local deploy controls. Retention job: <code>npm run retention</code> · Backup: <code>npm run backup</code> · Smoke: <code>npm run smoke</code>. OpenAPI: <code>docs/openapi.yaml</code>.</p>
+            <pre id="ops-out"></pre>
+            <div class="grid2" style="margin-top:1rem">
+              <div>
+                <h2 style="font-size:1rem">Rate limits</h2>
+                <pre id="rate-out"></pre>
+              </div>
+              <div>
+                <h2 style="font-size:1rem">Cookie / header defaults</h2>
+                <pre id="cookie-out"></pre>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section id="view-settings" class="view hidden">
           <div class="panel">
             <h2>Settings &amp; health</h2>
             <pre id="settings-out"></pre>
-            <p class="sub">MFA: <code>PHASEONE_ADMIN_EMAILS</code> (mutate) · <code>PHASEONE_VIEWER_EMAILS</code> (read-only). Optional SMTP or OTP fallback. Alerts: <code>PHASEONE_ALERT_WEBHOOK_URL</code>. Metrics: <code>/metrics</code>.</p>
+            <p class="sub">MFA: <code>PHASEONE_ADMIN_EMAILS</code> (mutate) · <code>PHASEONE_VIEWER_EMAILS</code> (read-only). Optional SMTP or OTP fallback. Alerts: <code>PHASEONE_ALERT_WEBHOOK_URL</code>. Metrics: <code>/metrics</code>. Cookies: <code>PHASEONE_SECURE_COOKIES</code> (HTTPS). Retention: <code>PHASEONE_RETENTION_DAYS</code>. API limits: <code>PHASEONE_API_RATE_LIMIT</code>.</p>
             <div class="actions" style="margin-top:.75rem">
               <button class="ghost" onclick="testAlert()">Test alert webhook</button>
             </div>
@@ -603,6 +622,14 @@
       renderIncidentItems(hits.data?.data || [], 'canary-hits');
     }
 
+    if (currentView === 'ops') {
+      const ops = await api('/api/ops');
+      document.getElementById('ops-out').textContent = JSON.stringify(ops.data, null, 2);
+      const rl = await api('/api/rate-limits');
+      document.getElementById('rate-out').textContent = JSON.stringify(rl.data, null, 2);
+      const ck = await api('/api/security/cookies');
+      document.getElementById('cookie-out').textContent = JSON.stringify(ck.data, null, 2);
+    }
     if (currentView === 'rules') {
       const { data } = await api('/api/rules');
       const rules = data.data || [];

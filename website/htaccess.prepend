@@ -1,0 +1,13 @@
+# --- PhaseOne10841.me HTTPS + www→apex (prepend; preserve cPanel php blocks below) ---
+<IfModule mod_rewrite.c>
+RewriteEngine On
+# Optional: www → apex
+RewriteCond %{HTTP_HOST} ^www\.phaseone10841\.me$ [NC]
+RewriteRule ^ https://phaseone10841.me%{REQUEST_URI} [L,R=301]
+# Force HTTPS for phaseone10841.me
+RewriteCond %{HTTPS} !=on
+RewriteCond %{HTTP_HOST} ^(www\.)?phaseone10841\.me$ [NC]
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>
+# --- end PhaseOne10841 HTTPS block ---
+

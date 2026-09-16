@@ -1,6 +1,6 @@
 # PhaseOne10841 default policy — Veracity Integrity LLC
 # https://VeracityIntegrity.com
-version: "0.4"
+version: "0.5"
 name: phaseone-default
 
 domains:

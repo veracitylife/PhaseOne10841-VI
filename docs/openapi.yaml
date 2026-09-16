@@ -1,0 +1,390 @@
+openapi: 3.0.3
+info:
+  title: PhaseOne10841 Agent Security Gateway API
+  description: |
+    Defensive Agent EDR / security gateway by Veracity Integrity LLC.
+    https://VeracityIntegrity.com
+
+    Covers the gateway (OpenAI-compatible proxy + PhaseOne control APIs)
+    and notes on the MFA admin dashboard proxy surface.
+  version: 0.5.0
+  contact:
+    name: Veracity Integrity LLC
+    url: https://VeracityIntegrity.com
+  license:
+    name: MIT
+servers:
+  - url: http://localhost:8080
+    description: Local gateway (docker compose)
+  - url: http://localhost:3000
+    description: Admin dashboard (proxies /api/* → gateway)
+
+tags:
+  - name: Health
+  - name: Chat
+  - name: Enforce
+  - name: Detection
+  - name: Admin
+  - name: Ops
+  - name: DashboardAuth
+
+paths:
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Liveness probe
+      responses:
+        '200':
+          description: Process up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  version: { type: string }
+                  vendor: { type: string }
+
+  /readyz:
+    get:
+      tags: [Health]
+      summary: Readiness (DB reachable)
+      responses:
+        '200':
+          description: Ready
+        '503':
+          description: Not ready
+
+  /health:
+    get:
+      tags: [Health]
+      summary: Legacy health with upstream + DB detail
+      responses:
+        '200':
+          description: OK or degraded
+
+  /metrics:
+    get:
+      tags: [Ops]
+      summary: Prometheus text metrics
+      responses:
+        '200':
+          description: text/plain Prometheus exposition
+
+  /v1/models:
+    get:
+      tags: [Chat]
+      summary: List models (OpenAI-compatible)
+      responses:
+        '200':
+          description: Model list
+
+  /v1/chat/completions:
+    post:
+      tags: [Chat]
+      summary: OpenAI-compatible chat completions (policy + scan + proxy)
+      parameters:
+        - in: header
+          name: X-PhaseOne-Agent-Id
+          schema: { type: string }
+        - in: header
+          name: X-PhaseOne-Session-Id
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model: { type: string }
+                messages:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        '200':
+          description: Upstream or mock completion
+        '403':
+          description: Blocked by policy / injection / egress
+        '429':
+          description: Rate limited
+
+  /v1/phaseone/tools/enforce:
+    post:
+      tags: [Enforce]
+      summary: Evaluate a tool call against policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tool_name]
+              properties:
+                agent_id: { type: string }
+                session_id: { type: string }
+                tool_name: { type: string }
+                arguments: { type: object }
+                wait_for_approval: { type: boolean }
+      responses:
+        '200':
+          description: Allowed
+        '202':
+          description: Pending approval
+        '403':
+          description: Denied
+        '429':
+          description: Rate limited
+
+  /v1/phaseone/scan/injection:
+    post:
+      tags: [Detection]
+      summary: Prompt-injection scanner
+      responses:
+        '200': { description: Scan result }
+        '403': { description: Blocked by policy }
+
+  /v1/phaseone/scan/untrusted:
+    post:
+      tags: [Detection]
+      summary: Scan untrusted tool/RAG/MCP content
+      responses:
+        '200': { description: Allowed }
+        '403': { description: Denied }
+
+  /v1/phaseone/a2a/message:
+    post:
+      tags: [Enforce]
+      summary: Agent-to-agent firewall
+      responses:
+        '200': { description: Allowed }
+        '202': { description: Quarantined }
+        '403': { description: Denied }
+
+  /v1/phaseone/a2a/trust:
+    get:
+      tags: [Admin]
+      summary: List A2A trust config
+      responses:
+        '200': { description: Trust levels + policy }
+    post:
+      tags: [Admin]
+      summary: Set A2A trust for an agent id
+      responses:
+        '200': { description: Updated }
+
+  /v1/phaseone/events:
+    get:
+      tags: [Admin]
+      summary: List recorded events
+      parameters:
+        - in: query
+          name: session_id
+          schema: { type: string }
+        - in: query
+          name: severity
+          schema: { type: string }
+        - in: query
+          name: event_type
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer }
+      responses:
+        '200': { description: Event list }
+    post:
+      tags: [Admin]
+      summary: Record an observable hook event
+      responses:
+        '201': { description: Created }
+
+  /v1/phaseone/stats:
+    get:
+      tags: [Admin]
+      summary: Dashboard counts
+      responses:
+        '200': { description: Counts }
+
+  /v1/phaseone/incidents:
+    get:
+      tags: [Admin]
+      summary: Recent high-severity incidents
+      responses:
+        '200': { description: Incidents }
+
+  /v1/phaseone/approvals:
+    get:
+      tags: [Admin]
+      summary: List approvals
+      responses:
+        '200': { description: Approvals }
+
+  /v1/phaseone/approvals/{id}/approve:
+    post:
+      tags: [Admin]
+      summary: Approve pending action
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Approved }
+
+  /v1/phaseone/approvals/{id}/deny:
+    post:
+      tags: [Admin]
+      summary: Deny pending action
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Denied }
+
+  /v1/phaseone/canaries:
+    get:
+      tags: [Detection]
+      summary: List canary files (markers are harmless fakes)
+      responses:
+        '200': { description: Files }
+
+  /v1/phaseone/canaries/manage:
+    get:
+      tags: [Admin]
+      summary: Canary management detail + last trigger
+      responses:
+        '200': { description: Managed canaries }
+
+  /v1/phaseone/canaries/rotate:
+    post:
+      tags: [Admin]
+      summary: Safely rotate a canary marker
+      responses:
+        '200': { description: Rotated }
+
+  /v1/phaseone/canaries/match:
+    post:
+      tags: [Detection]
+      summary: Match text against runtime canary markers
+      responses:
+        '200': { description: Hits }
+
+  /v1/phaseone/rules:
+    get:
+      tags: [Detection]
+      summary: List detection rules + hit counts
+      responses:
+        '200': { description: Rules }
+
+  /v1/phaseone/rules/evaluate:
+    post:
+      tags: [Detection]
+      summary: Evaluate event fields against rules
+      responses:
+        '200': { description: Hits }
+
+  /v1/phaseone/audit:
+    get:
+      tags: [Admin]
+      summary: Admin audit log
+      responses:
+        '200': { description: Entries }
+
+  /v1/phaseone/alerts/config:
+    get:
+      tags: [Ops]
+      summary: Alert webhook configuration (no secrets)
+      responses:
+        '200': { description: Config }
+
+  /v1/phaseone/policy:
+    get:
+      tags: [Admin]
+      summary: Current policy JSON
+      responses:
+        '200': { description: Policy }
+
+  /v1/phaseone/ops:
+    get:
+      tags: [Ops]
+      summary: Phase 5 ops summary (retention, rate limits, security notes)
+      responses:
+        '200': { description: Ops }
+
+  /v1/phaseone/retention:
+    get:
+      tags: [Ops]
+      summary: Retention configuration
+      responses:
+        '200': { description: Config }
+  /v1/phaseone/retention/run:
+    post:
+      tags: [Ops]
+      summary: Run retention cleanup (defaults to dry_run=true via API)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                days: { type: integer }
+                dry_run: { type: boolean, default: true }
+      responses:
+        '200': { description: Result }
+
+  /v1/phaseone/rate-limits:
+    get:
+      tags: [Ops]
+      summary: Documented rate limit settings
+      responses:
+        '200': { description: Limits }
+
+  /api/auth/request-otp:
+    post:
+      tags: [DashboardAuth]
+      summary: Request MFA OTP (dashboard, rate limited)
+      servers:
+        - url: http://localhost:3000
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string }
+      responses:
+        '200': { description: Sent / logged }
+        '429': { description: OTP rate limited }
+
+  /api/auth/login:
+    post:
+      tags: [DashboardAuth]
+      summary: Verify OTP and set session cookies
+      servers:
+        - url: http://localhost:3000
+      responses:
+        '200': { description: Authenticated }
+
+  /api/auth/logout:
+    post:
+      tags: [DashboardAuth]
+      summary: Clear session
+      servers:
+        - url: http://localhost:3000
+      responses:
+        '200': { description: Logged out }
+
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            message: { type: string }
+            type: { type: string }
+            code: { type: string }

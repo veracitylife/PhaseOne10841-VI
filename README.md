@@ -1,6 +1,6 @@
 # PhaseOne10841 — Defensive Agent Security Gateway (Agent EDR)
 
-**phaseone-core v0.4.0**
+**phaseone-core v0.5.0**
 
 Watches autonomous agents the way CrowdStrike watches endpoints — **outside** the agent, not via prompt-only hope.
 
@@ -103,26 +103,38 @@ flowchart LR
 - Deep session replay
 - Policy editor (safe YAML)
 
-### Phase 4 — Product hardening (this release)
+### Phase 4 — Product hardening
 | Feature | Behavior |
 |---------|----------|
-| **Admin audit log** | Login, approve/deny, policy save, export, settings, canary rotate, A2A trust — actor email + timestamp; UI + API |
+| **Admin audit log** | Login, approve/deny, policy save, export, settings, canary rotate, A2A trust |
 | **Policy save path** | Validated YAML; backup previous version; reject invalid / disallowed keys |
-| **Detection rules engine** | Sigma-ish YAML in `rules/`; match tool/domain/injection/canary/A2A fields; dashboard list + hit counts |
+| **Detection rules engine** | Sigma-ish YAML in `rules/` |
 | **Canary management** | List, safely rotate markers, show last trigger |
 | **A2A trust admin** | List/set trust levels via API + settings UI |
-| **Health & readiness** | `/healthz`, `/readyz` on gateway + dashboard; Compose healthchecks |
-| **Prometheus metrics** | `/metrics` counters: blocks, injections, canaries, approvals, A2A, alerts, rules |
-| **Framework adapters** | OpenAI-compatible helper + stubs/docs for LangChain, CrewAI, Claude-style tool proxy |
-| **Alerting** | Webhook on canary / injection blocked / approval timeout with retry + exponential backoff |
-| **Onboard** | Phase 4 env: alert webhook, rules dir, metrics, viewer emails |
-| **RBAC lite** | `PHASEONE_ADMIN_EMAILS` (mutate) vs `PHASEONE_VIEWER_EMAILS` (read-only) |
+| **Health & readiness** | `/healthz`, `/readyz`; Compose healthchecks |
+| **Prometheus metrics** | `/metrics` |
+| **Framework adapters** | OpenAI-compatible + stubs for LangChain, CrewAI, Claude-style |
+| **Alerting** | Webhook on canary / injection blocked / approval timeout |
+| **RBAC lite** | Admin vs viewer emails |
+
+### Phase 5 — Deployable local product (this release)
+| Feature | Behavior |
+|---------|----------|
+| **OpenAPI** | [`docs/openapi.yaml`](docs/openapi.yaml) covering gateway + admin auth surface |
+| **Rate limiting** | OTP request limits; API abuse limits on public-ish endpoints; documented in [`docs/operations.md`](docs/operations.md) |
+| **Retention & cleanup** | `npm run retention` (+ onboard env `PHASEONE_RETENTION_DAYS`) |
+| **Backup / restore** | `npm run backup` / `./scripts/restore.sh` — Postgres + policy + rules |
+| **Docker harden** | `restart: unless-stopped`, non-root `user: 1000:1000`, extended healthchecks, resource-limit notes |
+| **Smoke tests** | `npm run smoke` after `docker compose up` |
+| **Admin UX** | Ops / Phase 5 nav: retention, rate limits, cookie/security notes |
+| **Security defaults** | Shared security headers + CSP; Secure cookie docs (`PHASEONE_SECURE_COOKIES`) |
+| **Adapter docs** | Copy-paste OpenAI / curl / Python “point through PhaseOne” examples |
 
 ---
 
-## Quick start
+## Quick start — local Docker (Phase 5)
 
-### 1. Onboard (recommended)
+### 1. Onboard
 
 ```bash
 npm install
@@ -131,9 +143,9 @@ npm run onboard                 # interactive — Veracity Integrity banner
 npm run onboard -- --defaults
 ```
 
-Writes `.env` with MFA emails, SMTP or OTP fallback, DB, session secret, upstreams, SIEM, **alert webhook**, **rules dir**, **viewer emails**, ports.
+Writes `.env` with MFA emails, SMTP or OTP fallback, DB, session secret, upstreams, SIEM, alerts, rules, **retention**, **API/OTP rate limits**, **backup dir**, ports.
 
-### 2. Compose
+### 2. Compose up
 
 ```bash
 docker compose up --build
@@ -144,6 +156,7 @@ docker compose up --build
 | Gateway | http://localhost:8080 |
 | Dashboard | http://localhost:3000 |
 | Postgres | localhost:5432 (`phaseone` / `phaseone` / `phaseone`) |
+| OpenAPI | [`docs/openapi.yaml`](docs/openapi.yaml) |
 
 ```bash
 curl -s http://localhost:8080/healthz
@@ -152,7 +165,15 @@ curl -s http://localhost:8080/metrics | head
 curl -s http://localhost:3000/healthz
 ```
 
-### 3. MFA login (dashboard)
+### 3. Smoke test
+
+```bash
+npm run smoke
+```
+
+Hits healthz/readyz/metrics, mock chat path, policy deny (dangerous shell), canary detect, Phase 5 ops endpoint.
+
+### 4. MFA login (dashboard)
 
 1. Open http://localhost:3000  
 2. Enter an allowlisted **admin** or **viewer** email  
@@ -161,18 +182,20 @@ curl -s http://localhost:3000/healthz
 
 Disable auth for local demos only: `PHASEONE_DASHBOARD_AUTH=false` (not recommended).
 
-### 4. Tests (no Docker required)
+### 5. Unit tests (no Docker required)
 
 ```bash
 npm install
 npm test
 ```
 
-### 5. Lab / permissions
+### 6. Lab / permissions / retention / backup
 
 ```bash
 npm run lab
 npm run permissions
+npm run retention -- --dry-run --days 30
+npm run backup
 ```
 
 ---
@@ -188,6 +211,7 @@ Prefer `npm run onboard`. Key variables (see `.env.example`):
 | `PHASEONE_DASHBOARD_AUTH` | `true`/`false` |
 | `PHASEONE_SESSION_SECRET` | Session signing material (auto-generated by onboard) |
 | `PHASEONE_OTP_FALLBACK_FILE` | Dev OTP log path when SMTP unset |
+| `PHASEONE_SECURE_COOKIES` | `true` when serving dashboard over HTTPS |
 | `SMTP_*` | Optional OTP email delivery |
 | `DATABASE_URL` | Postgres |
 | `UPSTREAM_PROVIDER` | `mock` \| `openai` \| `ollama` \| `openrouter` |
@@ -195,11 +219,16 @@ Prefer `npm run onboard`. Key variables (see `.env.example`):
 | `PHASEONE_APPROVAL_TIMEOUT_MS` | Approval wait/expire |
 | `PHASEONE_SIEM_WEBHOOK_URL` | SIEM batch webhook |
 | `PHASEONE_ALERT_WEBHOOK_URL` | High-severity alert webhook |
-| `PHASEONE_ALERT_MAX_RETRIES` | Alert retry count (default 3) |
-| `PHASEONE_ALERT_BASE_DELAY_MS` | Alert backoff base (default 250) |
-| `PHASEONE_RULES_DIR` | Detection rules directory (default `./rules`) |
-| `PHASEONE_METRICS_ENABLED` | Metrics flag (scraped via `/metrics`) |
+| `PHASEONE_RULES_DIR` | Detection rules directory |
+| `PHASEONE_METRICS_ENABLED` | Metrics flag |
+| `PHASEONE_RETENTION_DAYS` | Event retention (default 30) |
+| `PHASEONE_API_RATE_LIMIT` | Gateway API abuse limit per window (default 120) |
+| `PHASEONE_API_RATE_WINDOW_MS` | API rate window (default 60000) |
+| `PHASEONE_OTP_RATE_LIMIT` | OTP requests per window (default 5) |
+| `PHASEONE_BACKUP_DIR` | Backup output root (default `./backups`) |
 | `PHASEONE_POLICY_PATH` | Override policy YAML path |
+
+Full ops detail: [`docs/operations.md`](docs/operations.md).
 
 ---
 
@@ -210,72 +239,33 @@ Prefer `npm run onboard`. Key variables (see `.env.example`):
 - Domains allowlist / default-deny · Shell deny-by-default · FS roots  
 - Secrets / canaries block-on-detect · MCP server allowlist + deny_tools  
 - Destructive → human approval · `approval.timeout_ms`  
-- `siem`, `prompt_injection`, `a2a`, `permission_analyzer`  
 - Admin save validates known keys only and **backs up** the previous file under `policy/backups/`
 
 ### Detection rules (`rules/*.yaml`)
 
-Lightweight Sigma-ish rules matching event fields (`event_type`, `tool_name`, `decision`, `injection_score`, `a2a_trust`, etc.).
-
-```bash
-curl -s http://localhost:8080/v1/phaseone/rules
-curl -s http://localhost:8080/v1/phaseone/rules/evaluate \
-  -H 'content-type: application/json' \
-  -d '{"event_type":"canary.trigger"}'
-```
+Lightweight Sigma-ish rules matching event fields.
 
 ### Canaries
 
-Harmless fake markers under `canaries/files/`. Detection fires when values appear in tool args/egress. Phase 4 adds list/rotate/last-trigger:
-
-```bash
-curl -s http://localhost:8080/v1/phaseone/canaries/manage
-curl -s http://localhost:8080/v1/phaseone/canaries/rotate \
-  -H 'content-type: application/json' \
-  -d '{"canary_id":"canary-aws-production-key-v1"}'
-```
-
-### A2A trust
-
-```bash
-curl -s http://localhost:8080/v1/phaseone/a2a/trust
-curl -s http://localhost:8080/v1/phaseone/a2a/trust \
-  -H 'content-type: application/json' \
-  -d '{"agent_id":"peer-1","trust":"LOCAL-TRUSTED","persist":true}'
-```
-
-### SIEM
-
-```bash
-curl -s 'http://localhost:8080/v1/phaseone/export/events.jsonl?limit=100'
-curl -s http://localhost:8080/v1/phaseone/export/webhook \
-  -H 'content-type: application/json' \
-  -d '{"url":"https://siem.example/hooks/phaseone"}'
-```
+Harmless fake markers under `canaries/files/`. Detection fires when values appear in tool args/egress.
 
 ### Metrics & alerts
 
 ```bash
 curl -s http://localhost:8080/metrics
 curl -s http://localhost:8080/v1/phaseone/alerts/config
-```
-
-Alerts fire (when `PHASEONE_ALERT_WEBHOOK_URL` is set) on **canary**, **injection blocked**, and **approval timeout**, with retry/backoff.
-
-### Audit log
-
-```bash
-curl -s http://localhost:8080/v1/phaseone/audit
+curl -s http://localhost:8080/v1/phaseone/ops
 ```
 
 ---
 
 ## Dashboard overview
 
-Behind MFA: **Overview · Incidents · Approvals · Session replay · Agents · Canaries · Injections · A2A trust · Permissions · Policy editor · Detection rules · Audit log · SIEM export · Lab monitor · Settings**
+Behind MFA: **Overview · Incidents · Approvals · Session replay · Agents · Canaries · Injections · A2A trust · Permissions · Policy · SIEM export · Detection rules · Audit log · Lab monitor · Ops / Phase 5 · Settings**
 
 - **Admins** can approve/deny, save policy, rotate canaries, set A2A trust, test alerts  
 - **Viewers** see the same read APIs but mutating routes return `403`
+- **Ops / Phase 5** shows retention, rate limits, and cookie/security defaults
 
 ---
 
@@ -296,7 +286,7 @@ const client = new OpenAI({
 });
 ```
 
-Helpers live in `adapters/` (OpenAI-compatible + stubs for LangChain, CrewAI, Claude-style tool proxy). See `adapters/README.md`.
+Copy-paste examples (Node, curl, Python) live in [`adapters/README.md`](adapters/README.md).
 
 | `UPSTREAM_PROVIDER` | Notes |
 |---------------------|--------|
@@ -305,27 +295,11 @@ Helpers live in `adapters/` (OpenAI-compatible + stubs for LangChain, CrewAI, Cl
 | `ollama` | `OLLAMA_BASE_URL` |
 | `openrouter` | `OPENROUTER_API_KEY` + `OPENROUTER_BASE_URL` |
 
-### Useful APIs
-
-```bash
-# Session replay
-curl -s http://localhost:8080/v1/phaseone/sessions/<id>/replay
-
-# Tool enforce
-curl -s http://localhost:8080/v1/phaseone/tools/enforce \
-  -H 'content-type: application/json' \
-  -d '{"agent_id":"my-agent","tool_name":"delete_file","arguments":{"path":"/tmp/x"},"wait_for_approval":false}'
-
-# Health
-curl -s http://localhost:8080/healthz
-curl -s http://localhost:8080/readyz
-```
-
 ---
 
 ## Lab (defensive only)
 
-`lab/` provides **inert** fake services and labeled `PHASEONE_TEST_*` fixtures so detectors can be exercised without real attacks or exploit recipes. See `lab/README.md`.
+`lab/` provides **inert** fake services and labeled `PHASEONE_TEST_*` fixtures. See `lab/README.md`.
 
 > Attack simulators and offensive labs are **out of scope**.
 
@@ -333,16 +307,14 @@ curl -s http://localhost:8080/readyz
 
 ## OWASP Agentic themes (high level)
 
-PhaseOne maps to common agentic risk themes at a **defensive control** level (no attack recipes):
-
 | Theme | PhaseOne control |
 |-------|------------------|
 | Prompt injection / untrusted content | Scanner + optional block; scan tool/RAG/MCP results |
 | Excessive agency / over-permissioned tools | Permission Analyzer; policy allow/deny; destructive → approval |
-| Sensitive data / credential leakage | Secret egress patterns; redaction in recorder/SIEM; canaries |
+| Sensitive data / credential leakage | Secret egress patterns; redaction; canaries |
 | Insecure plugin / MCP use | MCP server + tool allowlists on `mcp_call` |
 | Agent-to-agent trust | A2A firewall with trust levels + injection scan |
-| Insufficient monitoring | Event store, session replay, audit log, metrics, alerts, SIEM |
+| Insufficient monitoring | Event store, session replay, audit log, metrics, alerts, SIEM, retention |
 
 ---
 
@@ -353,6 +325,9 @@ npm install
 npm test                 # vitest — unit tests, no Docker
 npm run build            # tsc
 npm run migrate          # apply db/migrations/*.sql
+npm run smoke            # post-compose smoke (needs services up)
+npm run retention -- --dry-run
+npm run backup
 npm run dev:gateway
 npm run dev:dashboard
 ```
@@ -361,18 +336,20 @@ Layout:
 
 ```
 PhaseOne10841ME/
-  scripts/onboard.ts
-  gateway/             # proxy + enforce + phase3/phase4 routes
+  scripts/             # onboard, smoke, retention, backup, restore
+  docs/                # openapi.yaml, operations.md
+  gateway/             # proxy + enforce + phase3/4/5 routes
   policy/              # YAML + engine + backups/
   rules/               # Sigma-ish detection rules
   recorder/            # Postgres + export + timeline
   canaries/            # markers + detector + manager
-  dashboard/           # MFA UI + RBAC
-  adapters/            # framework stubs
+  dashboard/           # MFA UI + RBAC + Ops view
+  adapters/            # framework stubs + copy-paste docs
   lab/                 # inert fixtures
-  shared/              # secrets, metrics, audit, rbac, alerting, policy-save
-  db/migrations/       # 001_init + 002_phase3 + 003_phase4
+  shared/              # secrets, metrics, audit, rbac, alerting, rate-limit, retention
+  db/migrations/
   tests/
+  backups/             # npm run backup output
 ```
 
 ---
@@ -381,8 +358,9 @@ PhaseOne10841ME/
 
 | Feature | Status |
 |---------|--------|
-| Onboard + MFA + RBAC lite | **Works** (Phase 4) |
-| Audit log, rules, metrics, alerts, canary rotate | **Works** (Phase 4) |
+| Onboard + MFA + RBAC lite | **Works** |
+| Audit, rules, metrics, alerts, canary rotate | **Works** (Phase 4) |
+| Rate limits, retention, backup/restore, smoke, OpenAPI | **Works** (Phase 5) |
 | SIEM JSONL + webhook, deep replay, approval timeout | **Works** (Phase 3) |
 | Chat proxy + policy + canaries/secrets | **Works** |
 | Injection / permissions / A2A / lab | **Works** (Phase 2) |
