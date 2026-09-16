@@ -1,0 +1,689 @@
+/**
+ * PhaseOne10841 CLI Command Registry
+ * Shared command implementations for CLI and GUI.
+ * Veracity Integrity LLC · https://VeracityIntegrity.com
+ *
+ * DEFENSIVE ONLY — no exploit tooling.
+ */
+
+import { spawn, execSync, type ChildProcess, type SpawnOptions } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, resolve, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+export const ROOT = resolve(__dirname, '..');
+
+export const VERSION = '0.5.1';
+export const PRODUCT_NAME = 'PhaseOne10841';
+export const COMPANY = 'Veracity Integrity LLC';
+export const WEBSITE = 'https://VeracityIntegrity.com';
+
+export const BANNER = `
+╔══════════════════════════════════════════════════════════════╗
+║  PhaseOne10841 — Defensive Agent Security Gateway (EDR)     ║
+║  CLI Operator Console v${VERSION}                               ║
+║  A product of ${COMPANY}                        ║
+║  ${WEBSITE}                              ║
+║  DEFENSIVE ONLY — no exploit tooling                        ║
+╚══════════════════════════════════════════════════════════════╝
+`.trim();
+
+export interface CommandResult {
+  ok: boolean;
+  exitCode: number;
+  output: string;
+  error?: string;
+  data?: unknown;
+}
+
+export interface CommandDefinition {
+  name: string;
+  description: string;
+  usage: string;
+  options?: Array<{
+    flag: string;
+    description: string;
+    default?: string;
+  }>;
+  dangerous?: boolean;
+  requiresConfirmation?: boolean;
+  execute: (args: string[], opts: CommandOptions) => Promise<CommandResult>;
+}
+
+export interface CommandOptions {
+  cwd?: string;
+  env?: Record<string, string>;
+  timeout?: number;
+  onOutput?: (data: string) => void;
+  onError?: (data: string) => void;
+  confirm?: boolean;
+}
+
+function getEnvWithDefaults(): Record<string, string> {
+  const env = { ...process.env } as Record<string, string>;
+  if (!env.GATEWAY_URL) {
+    env.GATEWAY_URL = 'http://localhost:8080';
+  }
+  if (!env.DASHBOARD_URL) {
+    env.DASHBOARD_URL = 'http://localhost:3000';
+  }
+  return env;
+}
+
+async function runCommand(
+  command: string,
+  args: string[],
+  opts: CommandOptions = {}
+): Promise<CommandResult> {
+  const cwd = opts.cwd ?? ROOT;
+  const env = { ...getEnvWithDefaults(), ...opts.env };
+  const timeout = opts.timeout ?? 270000;
+
+  return new Promise((resolveResult) => {
+    const spawnOpts: SpawnOptions = {
+      cwd,
+      env,
+      shell: true,
+      stdio: 'pipe',
+    };
+
+    const proc = spawn(command, args, spawnOpts);
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      proc.kill('SIGTERM');
+    }, timeout);
+
+    proc.stdout?.on('data', (data: Buffer) => {
+      const str = data.toString();
+      stdout += str;
+      opts.onOutput?.(str);
+    });
+
+    proc.stderr?.on('data', (data: Buffer) => {
+      const str = data.toString();
+      stderr += str;
+      opts.onError?.(str);
+    });
+
+    proc.on('close', (code) => {
+      clearTimeout(timeoutId);
+      if (timedOut) {
+        resolveResult({
+          ok: false,
+          exitCode: 124,
+          output: stdout,
+          error: `Command timed out after ${timeout}ms. ${stderr}`,
+        });
+      } else {
+        resolveResult({
+          ok: code === 0,
+          exitCode: code ?? 1,
+          output: stdout,
+          error: stderr || undefined,
+        });
+      }
+    });
+
+    proc.on('error', (err) => {
+      clearTimeout(timeoutId);
+      resolveResult({
+        ok: false,
+        exitCode: 1,
+        output: stdout,
+        error: err.message,
+      });
+    });
+  });
+}
+
+async function runNpmScript(script: string, args: string[], opts: CommandOptions = {}): Promise<CommandResult> {
+  const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  return runCommand(npmCmd, ['run', script, '--', ...args], opts);
+}
+
+async function runTsx(scriptPath: string, args: string[], opts: CommandOptions = {}): Promise<CommandResult> {
+  const tsxPath = join(ROOT, 'node_modules', '.bin', process.platform === 'win32' ? 'tsx.cmd' : 'tsx');
+  const fullPath = resolve(ROOT, scriptPath);
+  return runCommand(tsxPath, [fullPath, ...args], opts);
+}
+
+export const commands: CommandDefinition[] = [
+  {
+    name: 'help',
+    description: 'Show help and available commands',
+    usage: 'phaseone help [command]',
+    execute: async (args) => {
+      const cmdName = args[0];
+      if (cmdName) {
+        const cmd = commands.find((c) => c.name === cmdName);
+        if (!cmd) {
+          return {
+            ok: false,
+            exitCode: 1,
+            output: '',
+            error: `Unknown command: ${cmdName}\nRun 'phaseone help' for available commands.`,
+          };
+        }
+        const lines = [
+          BANNER,
+          '',
+          `Command: ${cmd.name}`,
+          `Description: ${cmd.description}`,
+          `Usage: ${cmd.usage}`,
+        ];
+        if (cmd.options?.length) {
+          lines.push('', 'Options:');
+          for (const opt of cmd.options) {
+            lines.push(`  ${opt.flag.padEnd(24)} ${opt.description}${opt.default ? ` (default: ${opt.default})` : ''}`);
+          }
+        }
+        if (cmd.dangerous) {
+          lines.push('', '⚠️  WARNING: This command modifies data. Use with caution.');
+        }
+        return { ok: true, exitCode: 0, output: lines.join('\n') };
+      }
+
+      const lines = [
+        BANNER,
+        '',
+        'Usage: phaseone <command> [options]',
+        '',
+        'Commands:',
+      ];
+      const maxLen = Math.max(...commands.map((c) => c.name.length));
+      for (const cmd of commands) {
+        const warn = cmd.dangerous ? ' ⚠️' : '';
+        lines.push(`  ${cmd.name.padEnd(maxLen + 2)} ${cmd.description}${warn}`);
+      }
+      lines.push(
+        '',
+        'Run `phaseone help <command>` for detailed usage.',
+        '',
+        `${COMPANY} · ${WEBSITE}`,
+      );
+      return { ok: true, exitCode: 0, output: lines.join('\n') };
+    },
+  },
+
+  {
+    name: 'version',
+    description: 'Show version information',
+    usage: 'phaseone version',
+    execute: async () => {
+      const pkgPath = join(ROOT, 'package.json');
+      let pkgVersion = VERSION;
+      try {
+        const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+        pkgVersion = pkg.version ?? VERSION;
+      } catch {
+        // use default
+      }
+      const output = [
+        `${PRODUCT_NAME} v${pkgVersion}`,
+        `CLI v${VERSION}`,
+        `${COMPANY}`,
+        WEBSITE,
+        '',
+        'Defensive Agent Security Gateway (Agent EDR)',
+        'DEFENSIVE ONLY — no exploit tooling',
+      ].join('\n');
+      return { ok: true, exitCode: 0, output, data: { version: pkgVersion, cli: VERSION } };
+    },
+  },
+
+  {
+    name: 'onboard',
+    description: 'Run interactive onboarding or generate .env with defaults',
+    usage: 'phaseone onboard [--defaults] [--out <path>]',
+    options: [
+      { flag: '--defaults, -y', description: 'Non-interactive with default values' },
+      { flag: '--out, -o <path>', description: 'Output path for .env file', default: '.env' },
+      { flag: '--force, -f', description: 'Overwrite existing file without backup' },
+    ],
+    execute: async (args, opts) => {
+      return runTsx('scripts/onboard.ts', args, opts);
+    },
+  },
+
+  {
+    name: 'health',
+    description: 'Check gateway and dashboard health endpoints',
+    usage: 'phaseone health [--gateway <url>] [--dashboard <url>]',
+    options: [
+      { flag: '--gateway <url>', description: 'Gateway URL', default: 'http://localhost:8080' },
+      { flag: '--dashboard <url>', description: 'Dashboard URL', default: 'http://localhost:3000' },
+      { flag: '--json', description: 'Output as JSON' },
+    ],
+    execute: async (args, opts) => {
+      const env = getEnvWithDefaults();
+      let gatewayUrl = env.GATEWAY_URL ?? 'http://localhost:8080';
+      let dashboardUrl = env.DASHBOARD_URL ?? 'http://localhost:3000';
+      let json = false;
+
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] === '--gateway' && args[i + 1]) gatewayUrl = args[++i];
+        else if (args[i] === '--dashboard' && args[i + 1]) dashboardUrl = args[++i];
+        else if (args[i] === '--json') json = true;
+      }
+
+      const results: Record<string, { status: string; ok: boolean; detail?: string }> = {};
+      const endpoints = [
+        { name: 'gateway_healthz', url: `${gatewayUrl}/healthz` },
+        { name: 'gateway_readyz', url: `${gatewayUrl}/readyz` },
+        { name: 'gateway_metrics', url: `${gatewayUrl}/metrics` },
+        { name: 'dashboard_healthz', url: `${dashboardUrl}/healthz` },
+      ];
+
+      for (const ep of endpoints) {
+        try {
+          const res = await fetch(ep.url);
+          const text = await res.text();
+          results[ep.name] = {
+            status: res.status.toString(),
+            ok: res.ok,
+            detail: res.ok ? undefined : text.slice(0, 200),
+          };
+        } catch (err) {
+          results[ep.name] = {
+            status: 'error',
+            ok: false,
+            detail: err instanceof Error ? err.message : String(err),
+          };
+        }
+      }
+
+      const allOk = Object.values(results).every((r) => r.ok);
+
+      if (json) {
+        return {
+          ok: allOk,
+          exitCode: allOk ? 0 : 1,
+          output: JSON.stringify({ ok: allOk, endpoints: results }, null, 2),
+          data: { ok: allOk, endpoints: results },
+        };
+      }
+
+      const lines = [`${PRODUCT_NAME} Health Check`, ''];
+      for (const [name, r] of Object.entries(results)) {
+        const icon = r.ok ? '✓' : '✗';
+        lines.push(`${icon} ${name}: ${r.status}${r.detail ? ` — ${r.detail}` : ''}`);
+      }
+      lines.push('', allOk ? 'All endpoints healthy' : 'Some endpoints unhealthy');
+      lines.push(`${COMPANY}`);
+
+      return { ok: allOk, exitCode: allOk ? 0 : 1, output: lines.join('\n'), data: results };
+    },
+  },
+
+  {
+    name: 'ready',
+    description: 'Check if services are ready (gateway + db)',
+    usage: 'phaseone ready [--gateway <url>]',
+    options: [
+      { flag: '--gateway <url>', description: 'Gateway URL', default: 'http://localhost:8080' },
+      { flag: '--json', description: 'Output as JSON' },
+    ],
+    execute: async (args) => {
+      const env = getEnvWithDefaults();
+      let gatewayUrl = env.GATEWAY_URL ?? 'http://localhost:8080';
+      let json = false;
+
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] === '--gateway' && args[i + 1]) gatewayUrl = args[++i];
+        else if (args[i] === '--json') json = true;
+      }
+
+      try {
+        const res = await fetch(`${gatewayUrl}/readyz`);
+        const data = await res.json() as { status?: string };
+        const ready = res.ok && data?.status === 'ready';
+        const output = json
+          ? JSON.stringify({ ready, status: data?.status }, null, 2)
+          : `${ready ? '✓' : '✗'} Ready: ${data?.status ?? 'unknown'}`;
+        return { ok: ready, exitCode: ready ? 0 : 1, output, data: { ready, status: data?.status } };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const output = json
+          ? JSON.stringify({ ready: false, error: msg }, null, 2)
+          : `✗ Not ready: ${msg}`;
+        return { ok: false, exitCode: 1, output, error: msg };
+      }
+    },
+  },
+
+  {
+    name: 'metrics',
+    description: 'Fetch Prometheus metrics from gateway',
+    usage: 'phaseone metrics [--gateway <url>]',
+    options: [
+      { flag: '--gateway <url>', description: 'Gateway URL', default: 'http://localhost:8080' },
+    ],
+    execute: async (args) => {
+      const env = getEnvWithDefaults();
+      let gatewayUrl = env.GATEWAY_URL ?? 'http://localhost:8080';
+
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] === '--gateway' && args[i + 1]) gatewayUrl = args[++i];
+      }
+
+      try {
+        const res = await fetch(`${gatewayUrl}/metrics`);
+        const text = await res.text();
+        return { ok: res.ok, exitCode: res.ok ? 0 : 1, output: text };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, exitCode: 1, output: '', error: msg };
+      }
+    },
+  },
+
+  {
+    name: 'smoke',
+    description: 'Run post-compose smoke tests',
+    usage: 'phaseone smoke [--gateway <url>] [--dashboard <url>]',
+    options: [
+      { flag: '--gateway <url>', description: 'Gateway URL', default: 'http://localhost:8080' },
+      { flag: '--dashboard <url>', description: 'Dashboard URL', default: 'http://localhost:3000' },
+    ],
+    execute: async (args, opts) => {
+      const env: Record<string, string> = {};
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] === '--gateway' && args[i + 1]) env.GATEWAY_URL = args[++i];
+        else if (args[i] === '--dashboard' && args[i + 1]) env.DASHBOARD_URL = args[++i];
+      }
+      return runTsx('scripts/smoke.ts', [], { ...opts, env: { ...opts.env, ...env } });
+    },
+  },
+
+  {
+    name: 'migrate',
+    description: 'Run database migrations',
+    usage: 'phaseone migrate',
+    execute: async (args, opts) => {
+      return runTsx('db/migrate.ts', args, opts);
+    },
+  },
+
+  {
+    name: 'retention',
+    description: 'Run event retention cleanup',
+    usage: 'phaseone retention [--dry-run] [--execute] [--days <n>]',
+    options: [
+      { flag: '--dry-run, -n', description: 'Preview what would be deleted (default)' },
+      { flag: '--execute, --apply', description: 'Actually delete old data' },
+      { flag: '--days, -d <n>', description: 'Retention period in days', default: '30' },
+    ],
+    dangerous: true,
+    requiresConfirmation: true,
+    execute: async (args, opts) => {
+      const hasExecute = args.includes('--execute') || args.includes('--apply');
+      if (hasExecute && !opts.confirm) {
+        return {
+          ok: false,
+          exitCode: 1,
+          output: '',
+          error: 'Retention --execute requires confirmation. Pass --confirm or use --dry-run.',
+        };
+      }
+      return runTsx('scripts/retention-cleanup.ts', args, opts);
+    },
+  },
+
+  {
+    name: 'backup',
+    description: 'Backup Postgres + policy + rules',
+    usage: 'phaseone backup',
+    execute: async (args, opts) => {
+      const isWin = process.platform === 'win32';
+      if (isWin) {
+        const psPath = join(ROOT, 'scripts', 'backup-windows.ps1');
+        return runCommand('powershell', ['-ExecutionPolicy', 'Bypass', '-File', psPath], opts);
+      }
+      return runCommand('bash', [join(ROOT, 'scripts', 'backup.sh')], opts);
+    },
+  },
+
+  {
+    name: 'restore',
+    description: 'Restore from backup directory',
+    usage: 'phaseone restore <backup-dir>',
+    dangerous: true,
+    requiresConfirmation: true,
+    execute: async (args, opts) => {
+      if (!args[0]) {
+        return {
+          ok: false,
+          exitCode: 1,
+          output: '',
+          error: 'Usage: phaseone restore <backup-dir>\nExample: phaseone restore backups/20260916-123000',
+        };
+      }
+      if (!opts.confirm) {
+        return {
+          ok: false,
+          exitCode: 1,
+          output: '',
+          error: 'Restore requires confirmation. This REPLACES database contents.\nPass --confirm to proceed.',
+        };
+      }
+      const isWin = process.platform === 'win32';
+      if (isWin) {
+        return {
+          ok: false,
+          exitCode: 1,
+          output: '',
+          error: 'Restore script requires bash. Use WSL or Git Bash:\n  bash scripts/restore.sh ' + args[0],
+        };
+      }
+      return runCommand('bash', [join(ROOT, 'scripts', 'restore.sh'), args[0]], opts);
+    },
+  },
+
+  {
+    name: 'lab',
+    description: 'Run defensive lab harness (inert fixtures + detectors)',
+    usage: 'phaseone lab',
+    execute: async (args, opts) => {
+      return runTsx('lab/index.ts', args, opts);
+    },
+  },
+
+  {
+    name: 'permissions',
+    description: 'Analyze tool permissions and capability matrix',
+    usage: 'phaseone permissions [agent-id]',
+    execute: async (args, opts) => {
+      return runTsx('gateway/src/permissions.ts', args, opts);
+    },
+  },
+
+  {
+    name: 'compose',
+    description: 'Docker Compose operations (up, down, ps, logs)',
+    usage: 'phaseone compose <up|down|ps|logs|restart> [service]',
+    options: [
+      { flag: 'up', description: 'Start services (--build)' },
+      { flag: 'down', description: 'Stop and remove services' },
+      { flag: 'ps', description: 'List running services' },
+      { flag: 'logs', description: 'Show service logs' },
+      { flag: 'restart', description: 'Restart a service' },
+    ],
+    dangerous: true,
+    execute: async (args, opts) => {
+      const action = args[0];
+      const service = args[1];
+
+      if (!action || !['up', 'down', 'ps', 'logs', 'restart'].includes(action)) {
+        return {
+          ok: false,
+          exitCode: 1,
+          output: '',
+          error: 'Usage: phaseone compose <up|down|ps|logs|restart> [service]',
+        };
+      }
+
+      if (action === 'down' && !opts.confirm) {
+        return {
+          ok: false,
+          exitCode: 1,
+          output: '',
+          error: 'compose down requires confirmation. Pass --confirm to proceed.',
+        };
+      }
+
+      const docker = process.platform === 'win32' ? 'docker' : 'docker';
+      let composeArgs: string[];
+
+      switch (action) {
+        case 'up':
+          composeArgs = ['compose', 'up', '--build', '-d'];
+          if (service) composeArgs.push(service);
+          break;
+        case 'down':
+          composeArgs = ['compose', 'down'];
+          break;
+        case 'ps':
+          composeArgs = ['compose', 'ps'];
+          break;
+        case 'logs':
+          composeArgs = ['compose', 'logs', '--tail=100'];
+          if (service) composeArgs.push(service);
+          break;
+        case 'restart':
+          if (!service) {
+            return { ok: false, exitCode: 1, output: '', error: 'Specify service to restart' };
+          }
+          composeArgs = ['compose', 'restart', service];
+          break;
+        default:
+          composeArgs = ['compose', action];
+      }
+
+      return runCommand(docker, composeArgs, opts);
+    },
+  },
+
+  {
+    name: 'rules',
+    description: 'List detection rules',
+    usage: 'phaseone rules [--dir <path>]',
+    options: [
+      { flag: '--dir <path>', description: 'Rules directory', default: './rules' },
+      { flag: '--json', description: 'Output as JSON' },
+    ],
+    execute: async (args) => {
+      let rulesDir = process.env.PHASEONE_RULES_DIR ?? join(ROOT, 'rules');
+      let json = false;
+
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] === '--dir' && args[i + 1]) rulesDir = args[++i];
+        else if (args[i] === '--json') json = true;
+      }
+
+      const { readdirSync, readFileSync } = await import('node:fs');
+      const { parse } = await import('yaml');
+
+      try {
+        const files = readdirSync(rulesDir).filter((f) => f.endsWith('.yaml'));
+        const rules: Array<{ file: string; id?: string; title?: string; severity?: string }> = [];
+
+        for (const file of files) {
+          try {
+            const content = readFileSync(join(rulesDir, file), 'utf8');
+            const parsed = parse(content) as { id?: string; title?: string; severity?: string };
+            rules.push({
+              file,
+              id: parsed?.id,
+              title: parsed?.title,
+              severity: parsed?.severity,
+            });
+          } catch {
+            rules.push({ file, id: 'parse-error' });
+          }
+        }
+
+        if (json) {
+          return { ok: true, exitCode: 0, output: JSON.stringify(rules, null, 2), data: rules };
+        }
+
+        const lines = [`${PRODUCT_NAME} Detection Rules`, `Directory: ${rulesDir}`, ''];
+        for (const r of rules) {
+          lines.push(`  ${r.file}: ${r.title ?? r.id ?? 'untitled'} (${r.severity ?? 'unknown'})`);
+        }
+        lines.push('', `${rules.length} rule(s) found`);
+        return { ok: true, exitCode: 0, output: lines.join('\n'), data: rules };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, exitCode: 1, output: '', error: `Failed to list rules: ${msg}` };
+      }
+    },
+  },
+
+  {
+    name: 'gui',
+    description: 'Launch local GUI for CLI commands',
+    usage: 'phaseone gui [--port <n>]',
+    options: [
+      { flag: '--port, -p <n>', description: 'GUI server port', default: '8888' },
+    ],
+    execute: async (args, opts) => {
+      let port = 8888;
+      for (let i = 0; i < args.length; i++) {
+        if ((args[i] === '--port' || args[i] === '-p') && args[i + 1]) {
+          port = parseInt(args[++i], 10);
+        }
+      }
+
+      const guiPath = join(ROOT, 'cli', 'gui.ts');
+      if (!existsSync(guiPath)) {
+        return { ok: false, exitCode: 1, output: '', error: 'GUI server not found' };
+      }
+
+      console.log(`Starting ${PRODUCT_NAME} GUI on http://localhost:${port}`);
+      console.log(`${COMPANY} · ${WEBSITE}`);
+      console.log('');
+      console.log('Press Ctrl+C to stop');
+
+      const result = await runTsx('cli/gui.ts', ['--port', port.toString()], {
+        ...opts,
+        timeout: 0,
+        onOutput: (data) => process.stdout.write(data),
+        onError: (data) => process.stderr.write(data),
+      });
+
+      return result;
+    },
+  },
+];
+
+export function findCommand(name: string): CommandDefinition | undefined {
+  return commands.find((c) => c.name === name);
+}
+
+export async function executeCommand(
+  name: string,
+  args: string[],
+  opts: CommandOptions = {}
+): Promise<CommandResult> {
+  const cmd = findCommand(name);
+  if (!cmd) {
+    return {
+      ok: false,
+      exitCode: 1,
+      output: '',
+      error: `Unknown command: ${name}\nRun 'phaseone help' for available commands.`,
+    };
+  }
+
+  const hasConfirm = args.includes('--confirm') || args.includes('-y');
+  const filteredArgs = args.filter((a) => a !== '--confirm' && a !== '-y');
+
+  return cmd.execute(filteredArgs, { ...opts, confirm: hasConfirm || opts.confirm });
+}
+
+export { runCommand, runTsx, runNpmScript };

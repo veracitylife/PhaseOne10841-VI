@@ -13,7 +13,12 @@
   "bugs": {
     "url": "https://VeracityIntegrity.com"
   },
+  "bin": {
+    "phaseone": "./cli/index.ts"
+  },
   "scripts": {
+    "phaseone": "tsx cli/index.ts",
+    "phaseone:gui": "tsx cli/gui.ts",
     "build": "tsc",
     "onboard": "tsx scripts/onboard.ts",
     "dev:gateway": "tsx watch gateway/src/index.ts",

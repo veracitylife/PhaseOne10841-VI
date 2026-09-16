@@ -393,6 +393,68 @@ Roadmap items are aspirational and may change; contact Veracity Integrity LLC fo
 
 ---
 
+---
+
+## CLI & GUI
+
+PhaseOne10841 includes a first-class operator CLI and local GUI.
+
+### CLI Quick Start
+
+```bash
+# Install
+npm install
+
+# Run CLI commands
+npm run phaseone -- help
+npm run phaseone -- version
+npm run phaseone -- health
+npm run phaseone -- smoke
+
+# Or via npx
+npx phaseone help
+```
+
+### Available Commands
+
+| Command | Description |
+|---------|-------------|
+| `help` | Show help and available commands |
+| `version` | Show version information |
+| `onboard` | Run interactive onboarding or generate .env |
+| `health` | Check gateway and dashboard health |
+| `ready` | Check if services are ready |
+| `metrics` | Fetch Prometheus metrics |
+| `smoke` | Run post-compose smoke tests |
+| `migrate` | Run database migrations |
+| `retention` | Run event retention cleanup ⚠️ |
+| `backup` | Backup Postgres + policy + rules |
+| `restore` | Restore from backup ⚠️ |
+| `lab` | Run defensive lab harness |
+| `permissions` | Analyze tool permissions |
+| `compose` | Docker Compose operations |
+| `rules` | List detection rules |
+| `gui` | Launch local GUI |
+
+Commands marked ⚠️ modify data and require `--confirm`.
+
+### Local GUI
+
+```bash
+npm run phaseone -- gui
+# Opens http://localhost:8888
+```
+
+A lightweight browser-based interface for all CLI commands with:
+- Visual command list
+- Options forms
+- Confirmation dialogs for destructive actions
+- Live output streaming
+
+**Full CLI documentation:** [`docs/cli.md`](docs/cli.md)
+
+---
+
 ## License & company
 
 MIT — Copyright (c) 2026 **Veracity Integrity LLC** — see `LICENSE`.
@@ -405,4 +467,4 @@ Private product repository — distribution to authorized customers and partners
 
 ## Operator checklist
 
-See [docs/RECOMMENDATIONS.md](docs/RECOMMENDATIONS.md) (approved items 1–9), [docs/rules-tuning.md](docs/rules-tuning.md), and [docs/proxy.md](docs/proxy.md). TLS edge: `docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d`.
+See [docs/RECOMMENDATIONS.md](docs/RECOMMENDATIONS.md) (approved items 1–9), [docs/rules-tuning.md](docs/rules-tuning.md), [docs/cli.md](docs/cli.md), and [docs/proxy.md](docs/proxy.md). TLS edge: `docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d`.
