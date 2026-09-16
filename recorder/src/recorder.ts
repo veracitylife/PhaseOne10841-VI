@@ -177,7 +177,10 @@ export async function getDashboardCounts(): Promise<Record<string, number>> {
     blocked,
     canary,
     a2a,
+    a2aBlocked,
     promptInj,
+    permissionFindings,
+    labHits,
     pendingApprovals,
     sessions,
   ] = await Promise.all([
@@ -190,7 +193,12 @@ export async function getDashboardCounts(): Promise<Record<string, number>> {
     q(`SELECT COUNT(*)::int AS c FROM events WHERE decision = 'deny'`),
     q(`SELECT COUNT(*)::int AS c FROM events WHERE event_type = 'canary.trigger'`),
     q(`SELECT COUNT(*)::int AS c FROM events WHERE event_type = 'a2a.message'`),
-    q(`SELECT COUNT(*)::int AS c FROM events WHERE event_type = 'prompt_injection.detected'`),
+    q(`SELECT COUNT(*)::int AS c FROM events WHERE event_type IN ('a2a.blocked','a2a.quarantined')`),
+    q(
+      `SELECT COUNT(*)::int AS c FROM events WHERE event_type IN ('prompt_injection.detected','prompt_injection.blocked')`
+    ),
+    q(`SELECT COUNT(*)::int AS c FROM events WHERE event_type = 'permission.findings'`),
+    q(`SELECT COUNT(*)::int AS c FROM events WHERE event_type = 'lab.detector_hit'`),
     q(`SELECT COUNT(*)::int AS c FROM approvals WHERE status = 'pending'`),
     q(`SELECT COUNT(*)::int AS c FROM sessions`),
   ]);
@@ -202,7 +210,10 @@ export async function getDashboardCounts(): Promise<Record<string, number>> {
     blocked_actions: blocked,
     canary_triggers: canary,
     a2a_messages: a2a,
+    a2a_blocks: a2aBlocked,
     prompt_injection_hits: promptInj,
+    permission_findings: permissionFindings,
+    lab_detector_hits: labHits,
     pending_approvals: pendingApprovals,
     sessions,
   };
@@ -212,7 +223,7 @@ export async function listRecentIncidents(limit = 50): Promise<AgentEvent[]> {
   const pool = getPool();
   const result = await pool.query(
     `SELECT * FROM events
-     WHERE severity IN ('high','critical') OR decision = 'deny' OR event_type IN ('canary.trigger','secret.detected','approval.requested')
+     WHERE severity IN ('high','critical') OR decision = 'deny' OR event_type IN ('canary.trigger','secret.detected','approval.requested','prompt_injection.blocked','a2a.blocked','a2a.quarantined','permission.findings','lab.detector_hit')
      ORDER BY timestamp DESC LIMIT $1`,
     [limit]
   );

@@ -14,14 +14,26 @@ export type EventType =
   | 'canary.trigger'
   | 'secret.detected'
   | 'prompt_injection.detected'
+  | 'prompt_injection.blocked'
   | 'approval.requested'
   | 'approval.resolved'
   | 'agent.spawn'
   | 'a2a.message'
+  | 'a2a.blocked'
+  | 'a2a.quarantined'
+  | 'permission.findings'
+  | 'lab.detector_hit'
   | 'session.start'
   | 'session.end';
 
-export type PolicyAction = 'allow' | 'deny' | 'require_approval';
+export type PolicyAction = 'allow' | 'deny' | 'require_approval' | 'quarantine';
+
+export type A2ATrustLevel =
+  | 'LOCAL-TRUSTED'
+  | 'LOCAL-UNTRUSTED'
+  | 'REMOTE-VERIFIED'
+  | 'REMOTE-UNKNOWN'
+  | 'QUARANTINED';
 
 export interface AgentEvent {
   id?: string;

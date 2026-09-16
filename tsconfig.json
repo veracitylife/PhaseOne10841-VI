@@ -22,7 +22,8 @@
     "shared/**/*",
     "db/**/*",
     "examples/**/*",
-    "tests/**/*"
+    "tests/**/*",
+    "lab/**/*"
   ],
   "exclude": ["node_modules", "dist"]
 }

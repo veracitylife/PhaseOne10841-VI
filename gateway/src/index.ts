@@ -7,6 +7,7 @@ import {
   enforceToolCall,
   enforceEgressText,
   scanMessagesForThreats,
+  scanToolResultContent,
   newSessionId,
 } from './enforce.js';
 import { loadPolicy } from '../../policy/src/engine.js';
@@ -24,6 +25,10 @@ import {
 } from '../../recorder/src/recorder.js';
 import { healthCheck } from '../../recorder/src/db.js';
 import { listCanaryFiles } from '../../canaries/src/detector.js';
+import { analyzePermissions, formatReportText } from './permissions.js';
+import { processA2AMessage } from './a2a-firewall.js';
+import { runInjectionScan, getInjectionPolicy } from './scanner.js';
+import { listInjectionRules } from '../../shared/src/prompt-injection.js';
 
 const cfg = loadConfig();
 loadPolicy(cfg.policyPath);
@@ -36,7 +41,7 @@ app.get('/health', async (c) => {
   return c.json({
     status: dbOk ? 'ok' : 'degraded',
     service: 'phaseone-gateway',
-    version: '0.1.0',
+    version: '0.2.0',
     upstream: resolveUpstream(cfg).label,
     db: dbOk,
   });
@@ -79,13 +84,32 @@ app.post('/v1/chat/completions', async (c) => {
     metadata: { model, upstream: upstream.label },
   });
 
-  // Prompt-injection / canary scan on untrusted user/tool messages (detection)
-  await scanMessagesForThreats(sessionId, agentId, messages);
+  // Prompt-injection / canary scan with source classification + optional block
+  const threatScan = await scanMessagesForThreats(sessionId, agentId, messages);
+  if (threatScan.blocked) {
+    await recordEvent({
+      session_id: sessionId,
+      agent_id: agentId,
+      event_type: 'prompt_injection.blocked',
+      severity: 'high',
+      decision: 'deny',
+      decision_reason: threatScan.reason,
+    });
+    return c.json(
+      {
+        error: {
+          message: `PhaseOne10841 blocked request: ${threatScan.reason}`,
+          type: 'phaseone_prompt_injection',
+          code: 'prompt_injection.block',
+        },
+      },
+      403
+    );
+  }
 
   // Egress scan: block chat payloads that leak canaries/secrets to upstream when configured
   const egressBlob = messages.map((m) => (typeof m.content === 'string' ? m.content : '')).join('\n');
   const egressCheck = await enforceEgressText(sessionId, agentId, egressBlob, upstream.baseUrl);
-  // Only hard-block canary/secret egress — prompt injection is detect-only
   if (
     !egressCheck.allowed &&
     (egressCheck.decision.matchedCanaries?.length || egressCheck.decision.matchedSecrets?.length)
@@ -101,8 +125,6 @@ app.post('/v1/chat/completions', async (c) => {
     return c.json(egressCheck.blockedResponse, 403);
   }
 
-  // Pre-enforce tool calls if client sends them in assistant message (agent loop style)
-  // Also support PhaseOne extension: body.phaseone_tool_calls
   const pendingTools =
     (body.phaseone_tool_calls as Array<{ id?: string; name: string; arguments: unknown }>) ?? [];
 
@@ -128,7 +150,6 @@ app.post('/v1/chat/completions', async (c) => {
     }
   }
 
-  // Redact secrets in logged prompt content
   await recordEvent({
     session_id: sessionId,
     agent_id: agentId,
@@ -159,7 +180,7 @@ app.post('/v1/chat/completions', async (c) => {
               session_id: sessionId,
               agent_id: agentId,
               upstream: upstream.label,
-              gateway: 'phaseone-core/0.1.0',
+              gateway: 'phaseone-core/0.2.0',
             },
           }
         : data;
@@ -222,6 +243,140 @@ app.post('/v1/phaseone/tools/enforce', async (c) => {
     );
   }
   return c.json({ allowed: true, decision: result.decision, session_id: sessionId, agent_id: agentId });
+});
+
+/** Scan untrusted tool result / retrieved context / MCP payload */
+app.post('/v1/phaseone/scan/untrusted', async (c) => {
+  const body = await c.req.json<{
+    agent_id?: string;
+    session_id?: string;
+    content: unknown;
+    channel?: string;
+  }>();
+  const agentId = body.agent_id ?? 'agent-default';
+  const sessionId = body.session_id ?? newSessionId();
+  const result = await scanToolResultContent(
+    sessionId,
+    agentId,
+    body.content,
+    body.channel ?? 'untrusted_payload'
+  );
+  if (!result.allowed) {
+    return c.json({ allowed: false, decision: result.decision, error: result.blockedResponse?.error }, 403);
+  }
+  return c.json({ allowed: true, decision: result.decision, session_id: sessionId });
+});
+
+/** Prompt-injection scanner API */
+app.post('/v1/phaseone/scan/injection', async (c) => {
+  const body = await c.req.json<{
+    agent_id?: string;
+    session_id?: string;
+    text: string;
+    source?: 'user' | 'system' | 'untrusted';
+    channel?: string;
+  }>();
+  const sessionId = body.session_id ?? newSessionId();
+  const agentId = body.agent_id ?? 'agent-default';
+  const result = await runInjectionScan({
+    sessionId,
+    agentId,
+    text: body.text ?? '',
+    source: body.source ?? 'untrusted',
+    channel: body.channel,
+  });
+  return c.json(
+    {
+      blocked: result.blocked,
+      scan: result.scan,
+      policy: getInjectionPolicy(),
+      session_id: sessionId,
+    },
+    result.blocked ? 403 : 200
+  );
+});
+
+app.get('/v1/phaseone/scan/injection/rules', (c) => {
+  return c.json({ rules: listInjectionRules() });
+});
+
+/** Tool Permission Analyzer */
+app.post('/v1/phaseone/permissions/analyze', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as {
+    agent_id?: string;
+    declared_tools?: string[];
+    capabilities?: Record<string, boolean>;
+    record?: boolean;
+    session_id?: string;
+  };
+  const report = analyzePermissions({
+    agent_id: body.agent_id ?? 'policy-default',
+    declared_tools: body.declared_tools,
+    capabilities: body.capabilities as never,
+  });
+
+  if (body.record) {
+    const sessionId = body.session_id ?? newSessionId();
+    await recordEvent({
+      session_id: sessionId,
+      agent_id: report.agent_id,
+      event_type: 'permission.findings',
+      severity: report.summary.max_severity === 'critical' ? 'critical' : report.summary.max_severity === 'high' ? 'high' : 'medium',
+      decision: report.findings.length ? 'deny' : 'allow',
+      decision_reason: `${report.findings.length} permission findings`,
+      metadata: {
+        finding_ids: report.findings.map((f) => f.id),
+        summary: report.summary,
+      },
+    });
+  }
+
+  return c.json(report);
+});
+
+app.get('/v1/phaseone/permissions/analyze', (c) => {
+  const agentId = c.req.query('agent_id') ?? 'policy-default';
+  const format = c.req.query('format');
+  const report = analyzePermissions({ agent_id: agentId });
+  if (format === 'text') {
+    return c.text(formatReportText(report));
+  }
+  return c.json(report);
+});
+
+/** Agent-to-Agent firewall */
+app.post('/v1/phaseone/a2a/message', async (c) => {
+  const body = await c.req.json<{
+    from_agent_id: string;
+    to_agent_id: string;
+    session_id?: string;
+    content: string;
+    trust_level?: string;
+    metadata?: Record<string, unknown>;
+  }>();
+  const decision = await processA2AMessage({
+    from_agent_id: body.from_agent_id,
+    to_agent_id: body.to_agent_id,
+    session_id: body.session_id,
+    content: body.content ?? '',
+    trust_level: body.trust_level as never,
+    metadata: body.metadata,
+  });
+
+  const status =
+    decision.action === 'allow' ? 200 : decision.action === 'quarantine' ? 202 : 403;
+  return c.json(
+    {
+      allowed: decision.action === 'allow',
+      action: decision.action,
+      trust_level: decision.trust_level,
+      reason: decision.reason,
+      session_id: decision.session_id,
+      injection_hits: decision.injection_hits,
+      quarantined: decision.quarantined ?? false,
+    },
+    status
+  );
 });
 
 /** Record arbitrary observable hook (HTTP/FS/shell/MCP) from integrations */

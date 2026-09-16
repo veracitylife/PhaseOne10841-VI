@@ -1,5 +1,5 @@
 # PhaseOne10841 default policy — defensive default-deny where noted
-version: "0.1"
+version: "0.2"
 name: phaseone-default
 
 domains:
@@ -102,6 +102,7 @@ mcp:
     - fetch
     - memory
     - brave-search
+    - lab-fake-mcp  # defensive lab stub only
   allow_tools: []  # empty = all tools on allowed servers
 
 destructive:
@@ -127,3 +128,36 @@ secret_egress:
 canary:
   block_on_detect: true
   severity: high
+
+# Phase 2 — prompt injection scanner
+prompt_injection:
+  block_mode: true          # block untrusted (tool/RAG/MCP) hits at min severity
+  block_user: false         # detect user prompts; do not hard-block by default
+  scan_untrusted: true
+  scan_user: true
+  scan_system: false
+  min_block_severity: medium
+
+# Phase 2 — agent-to-agent firewall trust defaults
+a2a:
+  enabled: true
+  default_remote: REMOTE-UNKNOWN
+  local_trusted_agents:
+    - agent-orchestrator
+    - agent-default
+  local_untrusted_agents:
+    - agent-sandbox
+  verified_remote_agents: []
+  quarantined_agents:
+    - agent-quarantine-demo
+  block_quarantined: true
+  block_unknown_remote: false
+  scan_injection: true
+  block_on_injection: true
+  allow_from_to_same: true
+
+# Phase 2 — permission analyzer hooks
+permission_analyzer:
+  enabled: true
+  warn_on_excessive: true
+  record_findings_on_session_start: false

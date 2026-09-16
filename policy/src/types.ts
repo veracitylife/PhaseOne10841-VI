@@ -1,3 +1,5 @@
+import type { A2ATrustLevel } from '../../shared/src/types.js';
+
 export interface PolicyConfig {
   version: string;
   name: string;
@@ -44,4 +46,34 @@ export interface PolicyConfig {
     block_on_detect: boolean;
     severity: string;
   };
+  /** Phase 2: prompt-injection controls */
+  prompt_injection?: {
+    block_mode: boolean;
+    block_user: boolean;
+    scan_untrusted: boolean;
+    scan_user: boolean;
+    scan_system: boolean;
+    min_block_severity: 'low' | 'medium' | 'high';
+  };
+  /** Phase 2: agent-to-agent firewall */
+  a2a?: {
+    enabled: boolean;
+    default_remote: A2ATrustLevel;
+    local_trusted_agents: string[];
+    local_untrusted_agents: string[];
+    verified_remote_agents: string[];
+    quarantined_agents: string[];
+    block_quarantined: boolean;
+    block_unknown_remote: boolean;
+    scan_injection: boolean;
+    block_on_injection: boolean;
+    allow_from_to_same: boolean;
+  };
+  /** Phase 2: permission analyzer hooks */
+  permission_analyzer?: {
+    enabled: boolean;
+    warn_on_excessive: boolean;
+    record_findings_on_session_start: boolean;
+  };
 }
+

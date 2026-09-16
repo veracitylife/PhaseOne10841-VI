@@ -2,13 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { evaluateToolCall, evaluatePolicy } from '../../policy/src/engine.js';
 import { matchCanaries } from '../../canaries/src/detector.js';
 import { detectSecrets, redactSecrets } from '../../shared/src/secrets.js';
-import { detectPromptInjection } from '../../shared/src/prompt-injection.js';
 import {
   recordEvent,
   createApproval,
   getApproval,
 } from '../../recorder/src/recorder.js';
 import type { PolicyDecision } from '../../shared/src/types.js';
+import { scanMessagesWithPolicy, scanUntrustedPayload } from './scanner.js';
 
 export interface EnforceResult {
   allowed: boolean;
@@ -35,26 +35,20 @@ function blockedPayload(decision: PolicyDecision, extra?: Record<string, unknown
   };
 }
 
+/**
+ * Scan chat messages for prompt-injection / canaries with source classification.
+ * Returns whether untrusted content should hard-block the request (policy.block_mode).
+ */
 export async function scanMessagesForThreats(
   sessionId: string,
   agentId: string,
   messages: Array<{ role?: string; content?: unknown }>
-): Promise<void> {
+): Promise<{ blocked: boolean; reason?: string }> {
+  const inj = await scanMessagesWithPolicy(sessionId, agentId, messages);
+
   for (const msg of messages) {
-    if (msg.role !== 'user' && msg.role !== 'tool') continue;
+    if (msg.role === 'system') continue;
     const text = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content ?? '');
-    const injections = detectPromptInjection(text);
-    for (const hit of injections) {
-      await recordEvent({
-        session_id: sessionId,
-        agent_id: agentId,
-        event_type: 'prompt_injection.detected',
-        severity: hit.severity === 'high' ? 'high' : 'medium',
-        decision: 'allow',
-        decision_reason: `detector only: ${hit.rule}`,
-        metadata: { rule: hit.rule, excerpt: hit.excerpt },
-      });
-    }
     const canaries = matchCanaries(text);
     for (const c of canaries) {
       await recordEvent({
@@ -68,6 +62,33 @@ export async function scanMessagesForThreats(
       });
     }
   }
+
+  if (inj.blocked) {
+    return { blocked: true, reason: inj.reason };
+  }
+  return { blocked: false };
+}
+
+/** Scan a tool/MCP/RAG result blob as untrusted content */
+export async function scanToolResultContent(
+  sessionId: string,
+  agentId: string,
+  payload: unknown,
+  channel = 'tool_result'
+): Promise<EnforceResult> {
+  const result = await scanUntrustedPayload(sessionId, agentId, payload, channel);
+  if (result.blocked) {
+    const decision: PolicyDecision = {
+      action: 'deny',
+      reason: `untrusted content blocked: ${result.scan.blockedRules.join(', ')}`,
+      ruleId: 'prompt_injection.block',
+    };
+    return { allowed: false, decision, blockedResponse: blockedPayload(decision) };
+  }
+  return {
+    allowed: true,
+    decision: { action: 'allow', reason: 'untrusted content scan clean or detect-only', ruleId: 'prompt_injection.ok' },
+  };
 }
 
 export async function enforceToolCall(opts: {
@@ -94,7 +115,7 @@ export async function enforceToolCall(opts: {
     tool_name: opts.toolName,
     tool_args: opts.toolArgs,
     destination,
-    decision: decision.action === 'require_approval' ? 'require_approval' : decision.action,
+    decision: decision.action === 'require_approval' ? 'require_approval' : decision.action === 'deny' ? 'deny' : 'allow',
     decision_reason: decision.reason,
     metadata: {
       rule_id: decision.ruleId,
@@ -143,7 +164,7 @@ export async function enforceToolCall(opts: {
       severity: decision.action === 'allow' ? 'info' : 'high',
       tool_name: 'run_shell',
       tool_args: { command: redactSecrets(cmd) },
-      decision: decision.action === 'require_approval' ? 'require_approval' : decision.action,
+      decision: decision.action === 'require_approval' ? 'require_approval' : decision.action === 'deny' ? 'deny' : 'allow',
       decision_reason: decision.reason,
     });
   }
@@ -157,7 +178,7 @@ export async function enforceToolCall(opts: {
       tool_name: opts.toolName,
       destination,
       tool_args: opts.toolArgs,
-      decision: decision.action === 'require_approval' ? 'require_approval' : decision.action,
+      decision: decision.action === 'require_approval' ? 'require_approval' : decision.action === 'deny' ? 'deny' : 'allow',
       decision_reason: decision.reason,
     });
   }
@@ -170,7 +191,7 @@ export async function enforceToolCall(opts: {
       severity: decision.action === 'allow' ? 'info' : 'high',
       tool_name: opts.toolName,
       destination,
-      decision: decision.action === 'require_approval' ? 'require_approval' : decision.action,
+      decision: decision.action === 'require_approval' ? 'require_approval' : decision.action === 'deny' ? 'deny' : 'allow',
       decision_reason: decision.reason,
     });
   }
@@ -183,7 +204,7 @@ export async function enforceToolCall(opts: {
       severity: decision.action === 'allow' ? 'info' : 'high',
       tool_name: opts.toolName,
       tool_args: opts.toolArgs,
-      decision: decision.action === 'require_approval' ? 'require_approval' : decision.action,
+      decision: decision.action === 'require_approval' ? 'require_approval' : decision.action === 'deny' ? 'deny' : 'allow',
       decision_reason: decision.reason,
     });
   }
@@ -196,7 +217,7 @@ export async function enforceToolCall(opts: {
       severity: decision.action === 'allow' ? 'info' : 'high',
       tool_name: opts.toolName,
       tool_args: opts.toolArgs,
-      decision: decision.action === 'require_approval' ? 'require_approval' : decision.action,
+      decision: decision.action === 'require_approval' ? 'require_approval' : decision.action === 'deny' ? 'deny' : 'allow',
       decision_reason: decision.reason,
     });
   }
@@ -240,7 +261,6 @@ export async function enforceToolCall(opts: {
     });
 
     if (opts.waitForApproval && approval.id) {
-      // Short poll for demo (non-blocking API still returns pending)
       for (let i = 0; i < 3; i++) {
         await new Promise((r) => setTimeout(r, 200));
         const current = await getApproval(approval.id);
@@ -296,7 +316,6 @@ export async function enforceEgressText(
     method: 'POST',
   });
 
-  // Always record secrets/canaries found in outbound chat content destined upstream
   const secrets = detectSecrets(text);
   const canaries = matchCanaries(text);
   if (canaries.length) {
