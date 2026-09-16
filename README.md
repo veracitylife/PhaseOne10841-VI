@@ -392,3 +392,7 @@ MIT — Copyright (c) 2026 **Veracity Integrity LLC** — see `LICENSE`.
 Product concept site: https://phaseone10841.me  
 
 Private product repository — distribution to authorized customers and partners only.
+
+## Operator checklist
+
+See [docs/RECOMMENDATIONS.md](docs/RECOMMENDATIONS.md) and [docs/rules-tuning.md](docs/rules-tuning.md). For TLS edge proxy: `docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d`.

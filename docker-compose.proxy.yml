@@ -1,0 +1,20 @@
+# Usage (after base stack is healthy):
+#   docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d
+# Then open https://phaseone.localhost (trust Caddy local CA once)
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - gateway
+      - dashboard
+volumes:
+  caddy_data:
+  caddy_config:

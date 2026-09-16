@@ -9,19 +9,16 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build || npx tsc --noEmit || true
-RUN npm install -g tsx
 
 FROM node:20-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production
-# Non-root user (compose also sets user: "1000:1000")
-RUN groupadd --gid 1000 phaseone \
-  && useradd --uid 1000 --gid phaseone --shell /bin/bash --create-home phaseone \
-  && mkdir -p /app /tmp/phaseone && chown -R phaseone:phaseone /app /tmp/phaseone
+# node:20-bookworm-slim already has uid/gid 1000 (user `node`) — reuse it
+RUN mkdir -p /app /tmp/phaseone && chown -R node:node /app /tmp/phaseone
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm install -g tsx \
-  && chown -R phaseone:phaseone /app
-USER phaseone
+  && chown -R node:node /app
+USER node
 EXPOSE 8080 3000
 CMD ["tsx", "gateway/src/index.ts"]

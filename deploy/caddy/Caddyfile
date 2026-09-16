@@ -1,0 +1,26 @@
+# PhaseOne10841 local TLS edge — Veracity Integrity LLC
+# For localhost lab: https://phaseone.localhost (Caddy internal CA)
+# For real deploy: replace with your domain + email for Let's Encrypt
+
+{
+	# Uncomment for production ACME:
+	# email security@veracityintegrity.com
+}
+
+phaseone.localhost {
+	tls internal
+
+	# Dashboard (MFA UI)
+	handle /admin* {
+		reverse_proxy dashboard:3000
+	}
+	handle {
+		reverse_proxy dashboard:3000
+	}
+}
+
+# Optional separate gateway hostname
+gateway.phaseone.localhost {
+	tls internal
+	reverse_proxy gateway:8080
+}
