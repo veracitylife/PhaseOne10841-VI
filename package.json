@@ -1,7 +1,7 @@
 {
   "name": "phaseone-core",
   "version": "0.5.0",
-  "description": "PhaseOne10841 \u2014 Defensive Agent Security Gateway (Agent EDR) by Veracity Integrity LLC",
+  "description": "PhaseOne10841 — Defensive Agent Security Gateway (Agent EDR) by Veracity Integrity LLC",
   "private": true,
   "type": "module",
   "author": "Veracity Integrity LLC <https://VeracityIntegrity.com>",
@@ -46,7 +46,7 @@
     "@types/pg": "^8.11.10",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "vitest": "^4.1.11"
   },
   "license": "MIT",
   "keywords": [
