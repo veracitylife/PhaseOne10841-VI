@@ -201,7 +201,6 @@ function writeFallback(email: string, code: string, cfg: AuthConfig, reason: str
   }
 }
 
-/** Very small SMTP client for STARTTLS-less / optional auth send. */
 async function sendSmtpMail(
   cfg: AuthConfig,
   to: string,
@@ -209,46 +208,137 @@ async function sendSmtpMail(
   text: string
 ): Promise<void> {
   const net = await import('node:net');
+  const tls = await import('node:tls');
   const smtp = cfg.smtp!;
+  const host = smtp.host;
+  const port = smtp.port;
+  const useTls = smtp.secure || port === 465;
+
   await new Promise<void>((resolve, reject) => {
-    const socket = net.createConnection({ host: smtp.host, port: smtp.port }, () => {
-      const lines: string[] = [];
-      const send = (cmd: string) => socket.write(cmd + '\r\n');
-      socket.on('data', (buf) => {
-        lines.push(buf.toString('utf8'));
-        const all = lines.join('');
-        if (all.includes('220') && !all.includes('HELO')) {
-          send(`HELO phaseone.local`);
-          if (smtp.user && smtp.pass) {
-            // AUTH PLAIN
-            const token = Buffer.from(`\0${smtp.user}\0${smtp.pass}`).toString('base64');
-            send(`AUTH PLAIN ${token}`);
+    let settled = false;
+    const fail = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    };
+    const ok = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+
+    const onConnected = (socket: import('node:net').Socket) => {
+      let buf = '';
+      let step:
+        | 'greet'
+        | 'ehlo'
+        | 'user'
+        | 'pass'
+        | 'mail'
+        | 'rcpt'
+        | 'data'
+        | 'body'
+        | 'quit' = 'greet';
+      const write = (s: string) => socket.write(s + '\r\n');
+      const b64 = (s: string) => Buffer.from(s, 'utf8').toString('base64');
+
+      const timer = setTimeout(() => {
+        socket.destroy();
+        fail(new Error('SMTP timeout'));
+      }, 20000);
+
+      socket.on('data', (chunk) => {
+        buf += chunk.toString('utf8');
+        const parts = buf.split(/\r?\n/);
+        buf = parts.pop() ?? '';
+        for (const line of parts) {
+          if (step === 'greet' && /^220 /.test(line)) {
+            write('EHLO phaseone.local');
+            step = 'ehlo';
+            continue;
           }
-          send(`MAIL FROM:<${smtp.from}>`);
-          send(`RCPT TO:<${to}>`);
-          send('DATA');
-          send(
-            [
-              `From: ${smtp.from}`,
-              `To: ${to}`,
-              `Subject: ${subject}`,
-              'Content-Type: text/plain; charset=utf-8',
-              '',
-              text,
-              '.',
-            ].join('\r\n')
-          );
-          send('QUIT');
+          if (step === 'ehlo' && /^250 /.test(line)) {
+            if (smtp.user && smtp.pass) {
+              write('AUTH LOGIN');
+              step = 'user';
+            } else {
+              write(`MAIL FROM:<${smtp.from}>`);
+              step = 'rcpt';
+            }
+            continue;
+          }
+          if (step === 'user' && /^334 /.test(line)) {
+            write(b64(smtp.user!));
+            step = 'pass';
+            continue;
+          }
+          if (step === 'pass' && /^334 /.test(line)) {
+            write(b64(smtp.pass!));
+            step = 'mail';
+            continue;
+          }
+          if (step === 'mail') {
+            if (/^235 /.test(line)) {
+              write(`MAIL FROM:<${smtp.from}>`);
+              step = 'rcpt';
+              continue;
+            }
+            if (/^[45]/.test(line)) {
+              clearTimeout(timer);
+              fail(new Error(`SMTP AUTH failed: ${line}`));
+              socket.end();
+              return;
+            }
+          }
+          if (step === 'rcpt' && /^250 /.test(line)) {
+            write(`RCPT TO:<${to}>`);
+            step = 'data';
+            continue;
+          }
+          if (step === 'data' && /^250 /.test(line)) {
+            write('DATA');
+            step = 'body';
+            continue;
+          }
+          if (step === 'body' && /^354 /.test(line)) {
+            write(`From: ${smtp.from}`);
+            write(`To: ${to}`);
+            write(`Subject: ${subject}`);
+            write('Content-Type: text/plain; charset=utf-8');
+            write('');
+            write(text);
+            write('.');
+            step = 'quit';
+            continue;
+          }
+          if (step === 'quit' && /^250 /.test(line)) {
+            write('QUIT');
+            clearTimeout(timer);
+            ok();
+            socket.end();
+            return;
+          }
+          if (/^[45]\d\d /.test(line) && step !== 'ehlo') {
+            clearTimeout(timer);
+            fail(new Error(`SMTP error at ${step}: ${line}`));
+            socket.end();
+            return;
+          }
         }
       });
-      socket.on('end', () => resolve());
-      socket.on('error', reject);
-      setTimeout(() => {
-        socket.destroy();
-        resolve();
-      }, 8000);
-    });
-    socket.on('error', reject);
+      socket.on('error', (err) => {
+        clearTimeout(timer);
+        fail(err instanceof Error ? err : new Error(String(err)));
+      });
+    };
+
+    if (useTls) {
+      const socket = tls.connect({ host, port, servername: host }, () => onConnected(socket));
+      socket.on('error', (err) => fail(err instanceof Error ? err : new Error(String(err))));
+    } else {
+      const socket = net.createConnection({ host, port }, () => onConnected(socket));
+      socket.on('error', (err) => fail(err instanceof Error ? err : new Error(String(err))));
+    }
   });
 }
 
