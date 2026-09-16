@@ -1,7 +1,7 @@
 # PhaseOne10841 — Approved recommendations (1–9)
 
 **Veracity Integrity LLC** · https://VeracityIntegrity.com  
-Product: PhaseOne10841ME · **v0.5.1**  
+Product: PhaseOne10841ME · **v0.6.0**  
 All nine items below are **Approved**. Status reflects this tree after the implementation pass.
 
 ---

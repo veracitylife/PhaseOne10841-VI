@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const ROOT = resolve(__dirname, '..');
 
-export const VERSION = '0.5.1';
+export const VERSION = '0.6.0';
 export const PRODUCT_NAME = 'PhaseOne10841';
 export const COMPANY = 'Veracity Integrity LLC';
 export const WEBSITE = 'https://VeracityIntegrity.com';
@@ -570,37 +570,96 @@ export const commands: CommandDefinition[] = [
 
   {
     name: 'rules',
-    description: 'List detection rules',
-    usage: 'phaseone rules [--dir <path>]',
+    description: 'List or evaluate detection rules',
+    usage: 'phaseone rules [list|evaluate] [options]',
     options: [
       { flag: '--dir <path>', description: 'Rules directory', default: './rules' },
       { flag: '--json', description: 'Output as JSON' },
+      { flag: '--event <json>', description: 'Event JSON for evaluate subcommand' },
+      { flag: '--file <path>', description: 'Event JSON file for evaluate subcommand' },
     ],
     execute: async (args) => {
       let rulesDir = process.env.PHASEONE_RULES_DIR ?? join(ROOT, 'rules');
       let json = false;
+      let subcommand = 'list';
+      let eventJson = '';
+      let eventFile = '';
 
       for (let i = 0; i < args.length; i++) {
-        if (args[i] === '--dir' && args[i + 1]) rulesDir = args[++i];
-        else if (args[i] === '--json') json = true;
+        if (args[i] === 'list' || args[i] === 'evaluate') {
+          subcommand = args[i];
+        } else if (args[i] === '--dir' && args[i + 1]) {
+          rulesDir = args[++i];
+        } else if (args[i] === '--json') {
+          json = true;
+        } else if (args[i] === '--event' && args[i + 1]) {
+          eventJson = args[++i];
+        } else if (args[i] === '--file' && args[i + 1]) {
+          eventFile = args[++i];
+        }
       }
 
       const { readdirSync, readFileSync } = await import('node:fs');
       const { parse } = await import('yaml');
 
+      if (subcommand === 'evaluate') {
+        try {
+          let eventData: Record<string, unknown> = {};
+          if (eventFile) {
+            const content = readFileSync(eventFile, 'utf8');
+            eventData = JSON.parse(content);
+          } else if (eventJson) {
+            eventData = JSON.parse(eventJson);
+          } else {
+            return {
+              ok: false,
+              exitCode: 1,
+              output: '',
+              error: 'Usage: phaseone rules evaluate --event \'{"tool_name":"run_shell","decision":"deny"}\' [--dir <path>]\nOr: phaseone rules evaluate --file event.json',
+            };
+          }
+
+          const { evaluateRules } = await import('../rules/src/engine.js');
+          const hits = evaluateRules(eventData, rulesDir);
+
+          if (json) {
+            return { ok: true, exitCode: 0, output: JSON.stringify({ event: eventData, hits, count: hits.length }, null, 2), data: { event: eventData, hits } };
+          }
+
+          const lines = [`${PRODUCT_NAME} Rules Evaluation`, `Directory: ${rulesDir}`, ''];
+          lines.push(`Event: ${JSON.stringify(eventData)}`, '');
+          if (hits.length === 0) {
+            lines.push('No rules matched.');
+          } else {
+            lines.push(`Matched ${hits.length} rule(s):`, '');
+            for (const hit of hits) {
+              lines.push(`  [${hit.level.toUpperCase()}] ${hit.rule_id}: ${hit.title}`);
+              lines.push(`    Matched: ${JSON.stringify(hit.matched)}`);
+            }
+          }
+          lines.push('', `${COMPANY}`);
+          return { ok: true, exitCode: 0, output: lines.join('\n'), data: { event: eventData, hits } };
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return { ok: false, exitCode: 1, output: '', error: `Failed to evaluate rules: ${msg}` };
+        }
+      }
+
       try {
         const files = readdirSync(rulesDir).filter((f) => f.endsWith('.yaml'));
-        const rules: Array<{ file: string; id?: string; title?: string; severity?: string }> = [];
+        const rules: Array<{ file: string; id?: string; title?: string; severity?: string; level?: string; enabled?: boolean }> = [];
 
         for (const file of files) {
           try {
             const content = readFileSync(join(rulesDir, file), 'utf8');
-            const parsed = parse(content) as { id?: string; title?: string; severity?: string };
+            const parsed = parse(content) as { id?: string; title?: string; severity?: string; level?: string; enabled?: boolean };
             rules.push({
               file,
               id: parsed?.id,
               title: parsed?.title,
-              severity: parsed?.severity,
+              severity: parsed?.severity ?? parsed?.level,
+              level: parsed?.level,
+              enabled: parsed?.enabled !== false,
             });
           } catch {
             rules.push({ file, id: 'parse-error' });
@@ -613,14 +672,127 @@ export const commands: CommandDefinition[] = [
 
         const lines = [`${PRODUCT_NAME} Detection Rules`, `Directory: ${rulesDir}`, ''];
         for (const r of rules) {
-          lines.push(`  ${r.file}: ${r.title ?? r.id ?? 'untitled'} (${r.severity ?? 'unknown'})`);
+          const status = r.enabled === false ? ' (disabled)' : '';
+          lines.push(`  ${r.file}: ${r.title ?? r.id ?? 'untitled'} (${r.severity ?? r.level ?? 'unknown'})${status}`);
         }
         lines.push('', `${rules.length} rule(s) found`);
+        lines.push('', 'Use `phaseone rules evaluate --event \'...\' ` to test rule matching.');
         return { ok: true, exitCode: 0, output: lines.join('\n'), data: rules };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         return { ok: false, exitCode: 1, output: '', error: `Failed to list rules: ${msg}` };
       }
+    },
+  },
+
+  {
+    name: 'metrics-sniff',
+    description: 'Sniff and display live metrics summary (read-only)',
+    usage: 'phaseone metrics-sniff [--gateway <url>] [--interval <ms>] [--count <n>]',
+    options: [
+      { flag: '--gateway <url>', description: 'Gateway URL', default: 'http://localhost:8080' },
+      { flag: '--interval <ms>', description: 'Polling interval in ms', default: '5000' },
+      { flag: '--count <n>', description: 'Number of samples (0 = continuous)', default: '1' },
+      { flag: '--json', description: 'Output as JSON' },
+    ],
+    execute: async (args) => {
+      const env = getEnvWithDefaults();
+      let gatewayUrl = env.GATEWAY_URL ?? 'http://localhost:8080';
+      let interval = 5000;
+      let count = 1;
+      let json = false;
+
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] === '--gateway' && args[i + 1]) gatewayUrl = args[++i];
+        else if (args[i] === '--interval' && args[i + 1]) interval = parseInt(args[++i], 10);
+        else if (args[i] === '--count' && args[i + 1]) count = parseInt(args[++i], 10);
+        else if (args[i] === '--json') json = true;
+      }
+
+      const parseMetrics = (text: string): Record<string, number> => {
+        const metrics: Record<string, number> = {};
+        const lines = text.split('\n');
+        for (const line of lines) {
+          if (line.startsWith('#') || !line.trim()) continue;
+          const match = line.match(/^([a-zA-Z_:][a-zA-Z0-9_:]*)\s+(\d+(?:\.\d+)?)/);
+          if (match) {
+            metrics[match[1]] = parseFloat(match[2]);
+          }
+        }
+        return metrics;
+      };
+
+      const summaryKeys = [
+        'phaseone_requests_total',
+        'phaseone_decisions_allow',
+        'phaseone_decisions_deny',
+        'phaseone_decisions_approval_required',
+        'phaseone_canary_triggers_total',
+        'phaseone_injection_scans_total',
+        'phaseone_injection_blocked_total',
+        'phaseone_a2a_messages_total',
+        'phaseone_rule_hits_total',
+      ];
+
+      const samples: Array<{ timestamp: string; metrics: Record<string, number> }> = [];
+      let iterations = 0;
+
+      const fetchSample = async () => {
+        try {
+          const res = await fetch(`${gatewayUrl}/metrics`);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const text = await res.text();
+          const allMetrics = parseMetrics(text);
+          const summary: Record<string, number> = {};
+          for (const key of summaryKeys) {
+            if (key in allMetrics) summary[key] = allMetrics[key];
+          }
+          return { timestamp: new Date().toISOString(), metrics: summary };
+        } catch (err) {
+          return { timestamp: new Date().toISOString(), metrics: {}, error: err instanceof Error ? err.message : String(err) };
+        }
+      };
+
+      const formatSample = (sample: { timestamp: string; metrics: Record<string, number>; error?: string }): string => {
+        const lines = [`[${sample.timestamp}]`];
+        if (sample.error) {
+          lines.push(`  Error: ${sample.error}`);
+        } else if (Object.keys(sample.metrics).length === 0) {
+          lines.push('  No PhaseOne metrics found (gateway may not have processed requests yet)');
+        } else {
+          for (const [k, v] of Object.entries(sample.metrics)) {
+            const shortKey = k.replace('phaseone_', '');
+            lines.push(`  ${shortKey}: ${v}`);
+          }
+        }
+        return lines.join('\n');
+      };
+
+      if (count === 1) {
+        const sample = await fetchSample();
+        samples.push(sample);
+        if (json) {
+          return { ok: true, exitCode: 0, output: JSON.stringify(sample, null, 2), data: sample };
+        }
+        const output = [`${PRODUCT_NAME} Metrics Snapshot`, `Gateway: ${gatewayUrl}`, '', formatSample(sample), '', `${COMPANY}`].join('\n');
+        return { ok: true, exitCode: 0, output, data: sample };
+      }
+
+      while (count === 0 || iterations < count) {
+        const sample = await fetchSample();
+        samples.push(sample);
+        iterations++;
+        if (!json) {
+          console.log(formatSample(sample));
+        }
+        if (count > 0 && iterations >= count) break;
+        await new Promise((r) => setTimeout(r, interval));
+      }
+
+      if (json) {
+        return { ok: true, exitCode: 0, output: JSON.stringify(samples, null, 2), data: samples };
+      }
+      return { ok: true, exitCode: 0, output: `Collected ${samples.length} sample(s)`, data: samples };
     },
   },
 

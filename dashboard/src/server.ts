@@ -18,6 +18,9 @@ import {
   csrfCookieHeader,
   clearSessionCookies,
   validateCsrf,
+  createSession,
+  isEmailAllowlisted,
+  roleForEmail,
   __testGetLastOtp,
 } from './auth.js';
 import { canMutate, type DashboardRole } from '../../shared/src/rbac.js';
@@ -28,11 +31,19 @@ import {
   dashboardContentSecurityPolicy,
   describeCookieDefaults,
 } from '../../shared/src/security-headers.js';
+import {
+  loadOIDCConfig,
+  isOIDCEnabled,
+  getOIDCStatus,
+  createOIDCAuthorizationUrl,
+  handleOIDCCallback,
+  describeOIDCConfig,
+} from '../../shared/src/oidc.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const GATEWAY_URL = process.env.GATEWAY_URL ?? 'http://gateway:8080';
 const PORT = Number(process.env.DASHBOARD_PORT ?? 3000);
-const VERSION = '0.5.1';
+const VERSION = '0.6.0';
 
 const app = new Hono();
 const authCfg = loadAuthConfig();
@@ -226,6 +237,75 @@ app.post('/api/auth/logout', async (c) => {
 app.get('/api/auth/test/last-otp', (c) => {
   if (!authCfg.testMode) return c.json({ error: 'not available' }, 404);
   return c.json({ otp: __testGetLastOtp() });
+});
+
+app.get('/api/auth/oidc/status', (c) => {
+  const status = getOIDCStatus();
+  return c.json({
+    ...status,
+    config: isOIDCEnabled() ? describeOIDCConfig() : null,
+    vendor: 'Veracity Integrity LLC',
+  });
+});
+
+app.get('/api/auth/oidc/login', (c) => {
+  const oidcCfg = loadOIDCConfig();
+  if (!isOIDCEnabled(oidcCfg)) {
+    return c.json({ ok: false, error: 'OIDC is not enabled' }, 400);
+  }
+  
+  try {
+    const { url, state } = createOIDCAuthorizationUrl(oidcCfg);
+    return c.json({ ok: true, redirect_url: url, state });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'OIDC initialization failed';
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+app.get('/api/auth/oidc/callback', async (c) => {
+  const code = c.req.query('code');
+  const state = c.req.query('state');
+  const error = c.req.query('error');
+  const errorDescription = c.req.query('error_description');
+
+  if (error) {
+    console.error('[PhaseOne OIDC] Authorization error:', error, errorDescription);
+    return c.redirect(`/?error=oidc_${error}`);
+  }
+
+  if (!code || !state) {
+    return c.redirect('/?error=oidc_missing_params');
+  }
+
+  const result = await handleOIDCCallback(code, state);
+  
+  if (!result.ok || !result.email) {
+    console.error('[PhaseOne OIDC] Callback failed:', result.error);
+    return c.redirect(`/?error=oidc_auth_failed`);
+  }
+
+  if (!isEmailAllowlisted(result.email, authCfg)) {
+    console.warn('[PhaseOne OIDC] Email not in allowlist:', result.email);
+    return c.redirect('/?error=oidc_not_authorized');
+  }
+
+  const role = result.role ?? roleForEmail(result.email, authCfg);
+  const session = createSession(result.email, authCfg);
+  
+  await recordAudit({
+    actor_email: session.email,
+    action: 'login',
+    detail: { method: 'oidc', role: session.role },
+    ip: c.req.header('x-forwarded-for') ?? undefined,
+  }).catch(() => undefined);
+
+  const headers = new Headers();
+  headers.append('Location', '/?oidc=success');
+  headers.append('set-cookie', sessionCookieHeader(session, authCfg));
+  headers.append('set-cookie', csrfCookieHeader(session, authCfg));
+  
+  return new Response(null, { status: 302, headers });
 });
 
 function gate(c: Parameters<typeof requireAuth>[0]) {

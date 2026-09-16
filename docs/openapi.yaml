@@ -7,7 +7,7 @@ info:
 
     Covers the gateway (OpenAI-compatible proxy + PhaseOne control APIs)
     and notes on the MFA admin dashboard proxy surface.
-  version: 0.5.1
+  version: 0.6.0
   contact:
     name: Veracity Integrity LLC
     url: https://VeracityIntegrity.com

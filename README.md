@@ -1,6 +1,6 @@
 # PhaseOne10841 — Defensive Agent Security Gateway (Agent EDR)
 
-**phaseone-core v0.5.1**
+**phaseone-core v0.6.0**
 
 Watches autonomous agents the way CrowdStrike watches endpoints — **outside** the agent, not via prompt-only hope.
 
@@ -117,7 +117,7 @@ flowchart LR
 | **Alerting** | Webhook on canary / injection blocked / approval timeout |
 | **RBAC lite** | Admin vs viewer emails |
 
-### Phase 5 — Deployable local product (this release)
+### Phase 5 — Deployable local product
 | Feature | Behavior |
 |---------|----------|
 | **OpenAPI** | [`docs/openapi.yaml`](docs/openapi.yaml) covering gateway + admin auth surface |
@@ -132,7 +132,25 @@ flowchart LR
 
 ---
 
-## Quick start — local Docker (Phase 5)
+
+
+### Phase 6 — Operator UX & Integration (this release)
+| Feature | Behavior |
+|---------|----------|
+| **Operator CLI** | Full `phaseone` CLI with 18+ commands: health, smoke, migrate, retention, backup, restore, lab, permissions, rules, compose, gui |
+| **CLI commands** | `rules evaluate` — test events against rules; `metrics-sniff` — live metrics sampling |
+| **Local GUI** | Browser-based UI at `:8888` via `npm run phaseone -- gui`; runs same command registry |
+| **CLI docs** | [`docs/cli.md`](docs/cli.md) — comprehensive command reference |
+| **Framework adapters** | LangChain, CrewAI, Claude-style tool-proxy with working examples + enforce wrappers |
+| **Richer detection rules** | Aggregation rules (`count`, `distinct_count`, `sum`, `avg`) with time windows |
+| **New rules** | `brute-force-attempt`, `rapid-tool-calls`, `multi-domain-access`, `high-injection-average`, `approval-timeout-burst` |
+| **OIDC / SSO path** | Enterprise auth via `PHASEONE_OIDC_*` env vars; works alongside email OTP (never weakens MFA default) |
+| **Dashboard Phase 6 nav** | CLI docs link, OIDC status, richer rules visibility |
+
+---
+
+## Quick start — local Docker (Phase 6)
+
 
 ### 1. Onboard
 
@@ -374,7 +392,10 @@ PhaseOne10841ME/
 | SIEM JSONL + webhook, deep replay, approval timeout | **Works** (Phase 3) |
 | Chat proxy + policy + canaries/secrets | **Works** |
 | Injection / permissions / A2A / lab | **Works** (Phase 2) |
-| Framework adapters | **OpenAI works**; LangChain/CrewAI/Claude = docs + thin stubs |
+| Operator CLI + local GUI | **Works** (Phase 6) — 18+ commands, browser UI at :8888 |
+| Framework adapters | **Works** (Phase 6) — OpenAI, LangChain, CrewAI, Claude with enforce wrappers |
+| Aggregation/time-window rules | **Works** (Phase 6) — count, distinct_count, sum, avg with windows |
+| OIDC / SSO enterprise auth | **Works** (Phase 6) — optional alongside email OTP, never weakens MFA |
 | In-process OS syscall interception | **Stubbed** — use `/v1/phaseone/tools/enforce` |
 | Full MCP wire proxy | **Stubbed** — `mcp_call` enforce + lab fake-mcp |
 | Attack simulator / offensive labs | **Out of scope** |
@@ -383,11 +404,11 @@ PhaseOne10841ME/
 
 ## Roadmap (indicative)
 
-- Richer rule language (aggregations, time windows)  
-- Deeper framework SDKs (official LangChain / CrewAI packages)  
 - Optional signed canary packages for production deployments  
 - Multi-tenant org controls beyond email allowlists  
-- Hardened SMTP/OIDC SSO for enterprise MFA  
+- Official packaged SDKs (npm/PyPI LangChain/CrewAI adapters)  
+- SAML SSO in addition to OIDC  
+- Kubernetes Helm chart + operator  
 
 Roadmap items are aspirational and may change; contact Veracity Integrity LLC for commercial roadmap discussions.
 

@@ -1,6 +1,6 @@
 {
   "name": "phaseone-core",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "PhaseOne10841 \u2014 Defensive Agent Security Gateway (Agent EDR) by Veracity Integrity LLC",
   "private": true,
   "type": "module",

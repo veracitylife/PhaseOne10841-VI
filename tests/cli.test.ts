@@ -50,6 +50,7 @@ describe('CLI registry', () => {
     expect(names).toContain('compose');
     expect(names).toContain('rules');
     expect(names).toContain('gui');
+    expect(names).toContain('metrics-sniff');
   });
 
   it('commands have required properties', () => {
@@ -133,6 +134,61 @@ describe('rules command', () => {
     expect(result.ok).toBe(true);
     const parsed = JSON.parse(result.output);
     expect(Array.isArray(parsed)).toBe(true);
+  });
+
+  it('lists rules with list subcommand', async () => {
+    const result = await executeCommand('rules', ['list']);
+    expect(result.ok).toBe(true);
+    expect(result.output).toContain('Detection Rules');
+  });
+
+  it('evaluates rules against event JSON', async () => {
+    const result = await executeCommand('rules', [
+      'evaluate',
+      '--event',
+      '{"tool_name":"run_shell","decision":"deny"}',
+    ]);
+    expect(result.ok).toBe(true);
+    expect(result.output).toContain('Rules Evaluation');
+    expect(result.data).toHaveProperty('event');
+    expect(result.data).toHaveProperty('hits');
+  });
+
+  it('evaluate requires --event or --file', async () => {
+    const result = await executeCommand('rules', ['evaluate']);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('Usage');
+  });
+
+  it('evaluate outputs JSON when requested', async () => {
+    const result = await executeCommand('rules', [
+      'evaluate',
+      '--event',
+      '{"tool_name":"test","decision":"allow"}',
+      '--json',
+    ]);
+    expect(result.ok).toBe(true);
+    const parsed = JSON.parse(result.output);
+    expect(parsed).toHaveProperty('event');
+    expect(parsed).toHaveProperty('hits');
+    expect(parsed).toHaveProperty('count');
+  });
+});
+
+describe('metrics-sniff command', () => {
+  it('exists in command registry', () => {
+    const cmd = findCommand('metrics-sniff');
+    expect(cmd).toBeDefined();
+    expect(cmd?.description).toContain('metrics');
+  });
+
+  it('has expected options', () => {
+    const cmd = findCommand('metrics-sniff');
+    const flags = cmd?.options?.map((o) => o.flag) ?? [];
+    expect(flags.some((f) => f.includes('--gateway'))).toBe(true);
+    expect(flags.some((f) => f.includes('--interval'))).toBe(true);
+    expect(flags.some((f) => f.includes('--count'))).toBe(true);
+    expect(flags.some((f) => f.includes('--json'))).toBe(true);
   });
 });
 

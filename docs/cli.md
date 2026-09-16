@@ -124,8 +124,8 @@ phaseone version
 Output:
 
 ```
-PhaseOne10841 v0.5.1
-CLI v0.5.1
+PhaseOne10841 v0.6.0
+CLI v0.6.0
 Veracity Integrity LLC
 https://VeracityIntegrity.com
 
@@ -359,12 +359,19 @@ phaseone compose restart gateway
 
 ### `rules`
 
-List detection rules.
+List or evaluate detection rules.
 
 ```bash
+# List all rules
 phaseone rules
+phaseone rules list
 phaseone rules --json
 phaseone rules --dir ./custom-rules
+
+# Evaluate rules against an event
+phaseone rules evaluate --event '{"tool_name":"run_shell","decision":"deny"}'
+phaseone rules evaluate --file event.json
+phaseone rules evaluate --event '{"event_type":"auth_failure","source_ip":"1.2.3.4"}' --json
 ```
 
 **Options:**
@@ -373,21 +380,85 @@ phaseone rules --dir ./custom-rules
 |------|-------------|
 | `--dir <path>` | Rules directory (default: `./rules`) |
 | `--json` | Output as JSON |
+| `--event <json>` | Event JSON for evaluate subcommand |
+| `--file <path>` | Event JSON file for evaluate subcommand |
 
-**Example output:**
+**Example output (list):**
 
 ```
 PhaseOne10841 Detection Rules
 Directory: /path/to/rules
 
-  shell-denied.yaml: Shell command denied (high)
+  shell-denied.yaml: Shell command denied (medium)
   domain-denied.yaml: Domain access denied (medium)
   injection-blocked.yaml: Prompt injection blocked (high)
-  a2a-untrusted.yaml: Untrusted A2A source (medium)
-  canary-trigger.yaml: Canary token triggered (critical)
-  high-injection-score.yaml: High injection score (high)
+  brute-force-attempt.yaml: Brute force login attempt detected (high)
+  rapid-tool-calls.yaml: Rapid tool calls by agent (medium)
 
-6 rule(s) found
+11 rule(s) found
+
+Use `phaseone rules evaluate --event '...' ` to test rule matching.
+```
+
+**Example output (evaluate):**
+
+```
+PhaseOne10841 Rules Evaluation
+Directory: ./rules
+
+Event: {"tool_name":"run_shell","decision":"deny"}
+
+Matched 1 rule(s):
+
+  [MEDIUM] phaseone.shell.denied: Shell execution denied
+    Matched: {"tool_name":["run_shell",...],"decision":"deny"}
+
+Veracity Integrity LLC
+```
+
+### `metrics-sniff`
+
+Sniff and display live metrics summary (read-only).
+
+```bash
+# Single snapshot
+phaseone metrics-sniff
+
+# Poll 5 times, 3 seconds apart
+phaseone metrics-sniff --count 5 --interval 3000
+
+# JSON output
+phaseone metrics-sniff --json
+
+# Custom gateway
+phaseone metrics-sniff --gateway http://myserver:8080
+```
+
+**Options:**
+
+| Flag | Description |
+|------|-------------|
+| `--gateway <url>` | Gateway URL (default: `http://localhost:8080`) |
+| `--interval <ms>` | Polling interval in ms (default: `5000`) |
+| `--count <n>` | Number of samples, 0 = continuous (default: `1`) |
+| `--json` | Output as JSON |
+
+**Example output:**
+
+```
+PhaseOne10841 Metrics Snapshot
+Gateway: http://localhost:8080
+
+[2026-09-16T18:30:00.000Z]
+  requests_total: 150
+  decisions_allow: 120
+  decisions_deny: 25
+  decisions_approval_required: 5
+  canary_triggers_total: 0
+  injection_scans_total: 45
+  injection_blocked_total: 3
+
+Veracity Integrity LLC
 ```
 
 ### `gui`
