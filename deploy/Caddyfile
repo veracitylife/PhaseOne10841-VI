@@ -1,0 +1,12 @@
+# Example Caddyfile - TLS in front of PhaseOne before exposing beyond localhost
+# caddy run --config deploy/Caddyfile
+{
+	email admin@veracityintegrity.com
+}
+phaseone.example.com {
+	reverse_proxy /v1/* localhost:8080
+	reverse_proxy /healthz localhost:8080
+	reverse_proxy /readyz localhost:8080
+	reverse_proxy /metrics localhost:8080
+	reverse_proxy /* localhost:3000
+}

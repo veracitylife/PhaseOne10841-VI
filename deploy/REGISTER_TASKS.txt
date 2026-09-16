@@ -1,0 +1,3 @@
+﻿# Run in elevated PowerShell if Task Scheduler requires it:
+# schtasks /Create /TN "PhaseOne10841-Backup" /SC DAILY /ST 02:00 /TR "powershell -File C:\Users\disru\Documents\PhaseOne10841ME\deploy\run-backup.ps1" /RL LIMITED
+# schtasks /Create /TN "PhaseOne10841-Retention" /SC DAILY /ST 03:00 /TR "powershell -File C:\Users\disru\Documents\PhaseOne10841ME\deploy\run-retention.ps1" /RL LIMITED

@@ -1,0 +1,32 @@
+# PhaseOne10841 local TLS edge - Veracity Integrity LLC
+# Lab: https://phaseone.localhost (Caddy internal CA)
+# Production: replace hostname + uncomment email for Let's Encrypt
+
+{
+	# email security@veracityintegrity.com
+}
+
+phaseone.localhost {
+	tls internal
+
+	handle /v1/* {
+		reverse_proxy gateway:8080
+	}
+	handle /healthz {
+		reverse_proxy gateway:8080
+	}
+	handle /readyz {
+		reverse_proxy gateway:8080
+	}
+	handle /metrics {
+		reverse_proxy gateway:8080
+	}
+	handle {
+		reverse_proxy dashboard:3000
+	}
+}
+
+gateway.phaseone.localhost {
+	tls internal
+	reverse_proxy gateway:8080
+}
