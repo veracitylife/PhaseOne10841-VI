@@ -111,6 +111,63 @@ See [proxy.md](./proxy.md). Overlay:
 docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d
 ```
 
+## Gatekeeper operations (Phase 7)
+
+The automated gatekeeper runs a Sense → Decide → Act → Learn loop using YAML playbooks.
+
+### CLI commands
+
+```bash
+# Status
+npm run phaseone -- gatekeeper status
+
+# List playbooks
+npm run phaseone -- gatekeeper list-playbooks
+
+# Safe dry-run (DEFAULT)
+npm run phaseone -- gatekeeper dry-run
+
+# Live processing
+npm run phaseone -- gatekeeper run
+
+# Check LLM advisor health
+npm run phaseone -- gatekeeper llm-check
+
+# Confirm/deny pending harden-tier actions
+npm run phaseone -- gatekeeper confirm <id>
+npm run phaseone -- gatekeeper deny <id>
+```
+
+### Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PHASEONE_GATEKEEPER_ENABLED` | `false` | Enable gatekeeper worker |
+| `PHASEONE_GATEKEEPER_DRY_RUN` | `true` | Dry-run mode (no mutations) |
+| `PHASEONE_PLAYBOOKS_DIR` | `./playbooks` | Playbooks directory |
+| `PHASEONE_GATEKEEPER_POLL_MS` | `5000` | Event polling interval |
+| `PHASEONE_GATEKEEPER_WEBHOOK_URL` | (none) | Webhook for gatekeeper alerts |
+
+### LLM advisor (optional)
+
+The gatekeeper includes an optional LLM advisor (OpenRouter primary, Ollama fallback). The advisor is **purely advisory** — playbooks decide mutations.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENROUTER_API_KEY` | (required for OpenRouter) | API key |
+| `PHASEONE_GATEKEEPER_LLM_PRIMARY` | `openrouter` | Primary provider |
+| `PHASEONE_GATEKEEPER_LLM_FALLBACK` | `ollama` | Fallback provider |
+| `PHASEONE_GATEKEEPER_OLLAMA_BASE_URL` | `http://100.124.238.112:11434/v1` | Ollama endpoint |
+
+See [`docs/gatekeeper.md`](./gatekeeper.md) for full playbook schema and API documentation.
+
+### Safety notes
+
+- **Dry-run is default** — enable `PHASEONE_GATEKEEPER_DRY_RUN=false` only when ready
+- **Harden tier requires confirmation** — `rotate_canary`, `reload_rules` wait for human approval
+- **LLM never in enforcement path** — deterministic playbooks decide all actions
+- All gatekeeper actions are logged to admin audit with actor `gatekeeper`
+
 ## Windows scheduled backup / retention
 
 As Administrator, once:

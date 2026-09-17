@@ -589,6 +589,113 @@ Gateway: http://localhost:8080
 Veracity Integrity LLC
 ```
 
+### `gatekeeper`
+
+Manage automated defense playbooks (Phase 7).
+
+```bash
+# Status and configuration
+phaseone gatekeeper status               # View current state
+phaseone gatekeeper list-playbooks       # See available playbooks
+
+# Processing
+phaseone gatekeeper dry-run              # Safe test run (DEFAULT)
+phaseone gatekeeper run                  # Live processing
+phaseone gatekeeper dry-run --event '{"event_type":"canary.trigger","severity":"high"}'
+
+# Confirmations
+phaseone gatekeeper confirm <id>         # Approve pending action
+phaseone gatekeeper deny <id>            # Deny pending action
+
+# LLM advisor
+phaseone gatekeeper llm-check            # Check LLM advisor health
+
+# JSON output
+phaseone gatekeeper status --json
+```
+
+**Subcommands:**
+
+| Subcommand | Description |
+|------------|-------------|
+| `status` | Show gatekeeper status and config |
+| `run` | Process queued events through playbooks |
+| `dry-run` | Run playbooks in dry-run mode (DEFAULT — no mutations) |
+| `list-playbooks` | List available playbooks |
+| `confirm <id>` | Confirm a pending harden-tier action |
+| `deny <id>` | Deny a pending action |
+| `llm-check` | Check LLM advisor configuration and health |
+
+**Options:**
+
+| Flag | Description |
+|------|-------------|
+| `--dir <path>` | Playbooks directory (default: `./playbooks`) |
+| `--json` | Output as JSON |
+| `--event <json>` | Process a single event (JSON) |
+
+**Important Safety Notes:**
+
+- 🛡️ **DRY-RUN IS DEFAULT** — no mutations without explicit `run`
+- 🔒 **HARDEN tier actions require human confirmation** (rotate_canary, reload_rules)
+- 🤖 **LLM advisor is ADVISORY ONLY** — playbooks decide mutations, not LLM
+
+**Example output (status):**
+
+```
+PhaseOne10841 Gatekeeper Status
+
+Enabled: ✓ Yes
+Dry-run: ✓ Yes (safe mode)
+Last run: 2026-09-17T04:30:00.000Z
+Executions: 15
+Pending confirmations: 1
+Recent actions: 5
+Queue size: 0
+
+Configuration:
+  Playbooks dir: ./playbooks
+  Poll interval: 5000ms
+  Event window: 60000ms
+  Webhook: (not set)
+
+Pending Confirmations:
+  abc-123: rotate_canary (high-severity-harden) — expires 2026-09-17T04:40:00.000Z
+
+Veracity Integrity LLC
+```
+
+**Example output (llm-check):**
+
+```
+PhaseOne10841 Gatekeeper LLM Advisor Check
+
+Configuration:
+  Enabled: ✓ Yes
+  Primary: openrouter
+  Fallback: ollama
+
+OpenRouter:
+  Configured: ✓ Yes (API key set)
+  Base URL: https://openrouter.ai/api/v1
+  Model: openrouter/auto
+
+Ollama:
+  Base URL: http://100.124.238.112:11434/v1
+  Model: unrestricted:latest
+
+Running health checks...
+
+Health Check Results:
+  OpenRouter: ✓ OK (245ms)
+  Ollama: ✓ OK (1203ms)
+  Recommended: openrouter
+
+Veracity Integrity LLC
+```
+
+**Full gatekeeper documentation:** [`docs/gatekeeper.md`](gatekeeper.md)
+
 ### `gui`
 
 Launch local GUI for CLI commands.
@@ -604,7 +711,7 @@ Opens a browser-accessible interface at `http://localhost:8888` (or custom port)
 
 ## GUI Usage
 
-The GUI provides a graphical interface for all CLI commands.
+The GUI provides a graphical interface for all CLI commands, organized by category.
 
 ### Starting the GUI
 
@@ -616,25 +723,31 @@ npm run phaseone:gui
 
 ### Features
 
-- **Command List:** All CLI commands in a sidebar
+- **Guidance Panel:** Recommended first-run path and how-to instructions
+- **Category Accordion:** Commands grouped by category (Getting Started, Health & Ops, Defense & Detection, Gatekeeper, Dangerous)
+- **Examples & Tips:** Per-command examples and tips in the detail panel
 - **Options Form:** Input fields for command options
 - **Confirmation Dialogs:** Required for destructive commands
 - **Live Output:** Command results displayed in terminal-style output
 - **Status Badges:** Visual success/error indicators
 
-### Screenshots
+### Usage Flow
 
 The GUI runs at `http://localhost:8888` by default:
 
-1. Select a command from the sidebar
-2. Fill in options (if any)
-3. Click "Run Command"
-4. View output in the terminal panel
+1. Review the **Guidance Panel** for recommended first-run path
+2. Expand a **Category** (e.g., Getting Started, Gatekeeper)
+3. Select a command from the list
+4. Review **Examples** and **Tips** in the detail panel
+5. Fill in options (if any)
+6. Click "Run Command"
+7. View output in the terminal panel
 
 ### Safety
 
 - Destructive commands (⚠️) require clicking "Proceed" in a confirmation dialog
 - `compose down`, `retention --execute`, and `restore` all prompt before executing
+- Gatekeeper actions in the `harden` tier show confirmation warnings
 
 ---
 

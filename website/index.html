@@ -182,6 +182,13 @@
             <h3>Lab harness</h3>
             <p>Inert fake services and labeled TEST fixtures for defensive detector validation.</p>
           </article>
+          <article class="card">
+            <div class="card-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M9 8h.01M6 12l3 3 5-5"/></svg>
+            </div>
+            <h3>Operator CLI &amp; GUI</h3>
+            <p>Full CLI with 20+ commands organized by category (<code>phaseone menu</code>). Local GUI at :8888 with guidance panel, examples, and tips. <code>phaseone gatekeeper llm-check</code> verifies LLM advisor health.</p>
+          </article>
           <article class="card card-featured">
             <div class="card-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7v10c0 5.55 3.84 10.74 10 12 6.16-1.26 10-6.45 10-12V7l-10-5z"/><path d="M9 12l2 2 4-4"/></svg>
@@ -198,10 +205,12 @@
           </article>
         </div>
         <div class="quickstart">
-          <h3>Quick start</h3>
-          <pre><code>npm run onboard
-docker compose up</code></pre>
-          <p class="muted">Gateway on <code>:8080</code> · MFA dashboard on <code>:3000</code> · Source: <a href="https://github.com/veracitylife/PhaseOne10841-VI" rel="noopener noreferrer" target="_blank">github.com/veracitylife/PhaseOne10841-VI</a></p>
+          <h3>Quick start (v0.7.0)</h3>
+          <pre><code>npm run phaseone -- onboard    # Generate .env
+npm run phaseone -- compose up # Start stack
+npm run phaseone -- health     # Verify
+npm run phaseone -- menu       # Explore commands</code></pre>
+          <p class="muted">Gateway on <code>:8080</code> · MFA dashboard on <code>:3000</code> · CLI GUI on <code>:8888</code> · Source: <a href="https://github.com/veracitylife/PhaseOne10841-VI" rel="noopener noreferrer" target="_blank">github.com/veracitylife/PhaseOne10841-VI</a></p>
         </div>
       </div>
     </section>

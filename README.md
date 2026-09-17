@@ -439,7 +439,7 @@ Roadmap items are aspirational and may change; contact Veracity Integrity LLC fo
 
 ## CLI & GUI
 
-PhaseOne10841 includes a first-class operator CLI and local GUI.
+PhaseOne10841 includes a first-class operator CLI and local GUI with structured menus and guidance.
 
 ### CLI Quick Start
 
@@ -447,38 +447,57 @@ PhaseOne10841 includes a first-class operator CLI and local GUI.
 # Install
 npm install
 
-# Run CLI commands
-npm run phaseone -- help
+# Run CLI commands — grouped by category
+npm run phaseone -- help      # Show grouped help with categories
+npm run phaseone -- menu      # Interactive menu (TTY only)
 npm run phaseone -- version
 npm run phaseone -- health
-npm run phaseone -- smoke
 
 # Or via npx
 npx phaseone help
+npx phaseone menu
 ```
 
-### Available Commands
+### Command Categories
 
-| Command | Description |
-|---------|-------------|
-| `help` | Show help and available commands |
-| `version` | Show version information |
-| `onboard` | Run interactive onboarding or generate .env |
-| `health` | Check gateway and dashboard health |
-| `ready` | Check if services are ready |
-| `metrics` | Fetch Prometheus metrics |
-| `smoke` | Run post-compose smoke tests |
-| `migrate` | Run database migrations |
-| `retention` | Run event retention cleanup ⚠️ |
-| `backup` | Backup Postgres + policy + rules |
-| `restore` | Restore from backup ⚠️ |
-| `lab` | Run defensive lab harness |
-| `permissions` | Analyze tool permissions |
-| `compose` | Docker Compose operations |
-| `rules` | List detection rules |
-| `gui` | Launch local GUI |
+Commands are organized into five categories for easy navigation:
 
-Commands marked ⚠️ modify data and require `--confirm`.
+| Category | Commands | Description |
+|----------|----------|-------------|
+| 🚀 **Getting Started** | `help`, `menu`, `version`, `onboard`, `gui` | Setup and first-run |
+| 🩺 **Health & Ops** | `health`, `ready`, `metrics`, `smoke`, `compose`, `backup`, `migrate`, `metrics-sniff` | Stack operations |
+| 🛡️ **Defense & Detection** | `rules`, `permissions`, `lab` | Rules and validation |
+| 🤖 **Gatekeeper** | `gatekeeper` (status, run, dry-run, list-playbooks, llm-check, confirm, deny) | Automated defense |
+| ⚠️ **Dangerous** | `retention`, `restore` | Data modification (requires `--confirm`) |
+
+### Recommended First Run
+
+```bash
+npm run phaseone -- onboard      # 1. Generate .env configuration
+npm run phaseone -- compose up   # 2. Start Docker services
+npm run phaseone -- health       # 3. Verify services are running
+npm run phaseone -- smoke        # 4. Run smoke tests
+npm run phaseone -- gui          # 5. Launch browser GUI (optional)
+```
+
+### Interactive Menu
+
+```bash
+npm run phaseone -- menu   # Browse categories interactively
+```
+
+The interactive menu provides numbered category navigation with detailed per-command help, examples, and tips.
+
+### Key Gatekeeper Commands
+
+```bash
+npm run phaseone -- gatekeeper status           # View current state
+npm run phaseone -- gatekeeper list-playbooks   # See available playbooks
+npm run phaseone -- gatekeeper dry-run          # Safe test (DEFAULT)
+npm run phaseone -- gatekeeper llm-check        # Check LLM advisor health
+```
+
+> **Gatekeeper safety:** Dry-run is default. Harden-tier actions require human confirmation. LLM advisor is advisory only.
 
 ### Local GUI
 
@@ -487,10 +506,11 @@ npm run phaseone -- gui
 # Opens http://localhost:8888
 ```
 
-A lightweight browser-based interface for all CLI commands with:
-- Visual command list
-- Options forms
-- Confirmation dialogs for destructive actions
+A lightweight browser-based interface with:
+- **Category accordion** — Commands grouped by category
+- **Guidance panel** — Recommended first-run path
+- **Examples & tips** — Per-command help with examples
+- **Confirmation dialogs** — Required for destructive actions
 - Live output streaming
 
 **Full CLI documentation:** [`docs/cli.md`](docs/cli.md)
