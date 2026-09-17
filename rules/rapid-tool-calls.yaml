@@ -1,0 +1,25 @@
+id: phaseone.agent.rapid_tools
+title: Rapid tool calls by agent
+description: >
+  Detects agents making an unusually high number of tool calls in a short window.
+  May indicate runaway agent behavior or automated abuse.
+status: experimental
+level: medium
+enabled: true
+logsource:
+  product: PhaseOne10841
+detection:
+  selection:
+    event_type: tool_call
+  aggregation:
+    type: count
+    group_by:
+      - agent_id
+    threshold: 50
+    comparison: gte
+  timewindow:
+    duration_ms: 60000  # 1 minute
+  condition: selection and aggregation
+falsepositives:
+  - Legitimate high-throughput agents
+  - Load testing

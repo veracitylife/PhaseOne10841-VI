@@ -1,0 +1,39 @@
+# PhaseOne10841 Gatekeeper Playbook — High Severity Harden
+# Veracity Integrity LLC · https://VeracityIntegrity.com
+# DEFENSIVE ONLY
+
+id: high-severity-harden
+name: High Severity Hardening Response
+description: Harden stance on critical security events (requires confirmation)
+
+enabled: true
+tier: harden
+
+match:
+  severity: critical
+  count: 5
+  window_ms: 300000
+
+actions:
+  - type: emit_alert
+    params:
+      message: "Critical severity threshold reached — hardening initiated"
+
+  - type: write_audit
+    params:
+      action: gatekeeper.harden_initiated
+
+  - type: dashboard_notify
+    params:
+      message: "🔴 Critical events — hardening stance (confirmation required)"
+
+  - type: rotate_canary
+    requires_confirmation: true
+    params:
+      canary_id: api-key
+
+  - type: reload_rules
+    requires_confirmation: true
+
+cooldown_ms: 1800000
+max_executions_per_window: 1

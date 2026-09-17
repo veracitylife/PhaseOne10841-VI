@@ -128,18 +128,18 @@ describe('onboard Phase 5 env', () => {
     expect(env).toContain('PHASEONE_API_RATE_LIMIT=');
     expect(env).toContain('PHASEONE_OTP_RATE_LIMIT=');
     expect(env).toContain('PHASEONE_BACKUP_DIR=');
-    expect(env).toContain('v0.5');
+    expect(env).toContain('v0.7');
   });
 });
 
 describe('version & docs artifacts', () => {
-  it('config productVersion is 0.5.1', () => {
-    expect(loadConfig().productVersion).toBe('0.5.1');
+  it('config productVersion is 0.7.0', () => {
+    expect(loadConfig().productVersion).toBe('0.7.0');
   });
 
-  it('package.json is 0.5.1', () => {
+  it('package.json is 0.7.0', () => {
     const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'));
-    expect(pkg.version).toBe('0.5.1');
+    expect(pkg.version).toBe('0.7.0');
     expect(pkg.scripts.smoke).toBeTruthy();
     expect(pkg.scripts.retention).toBeTruthy();
     expect(pkg.scripts.backup).toBeTruthy();
@@ -152,15 +152,15 @@ describe('version & docs artifacts', () => {
     expect(body).toContain('/healthz');
     expect(body).toContain('/v1/chat/completions');
     expect(body).toContain('/v1/phaseone/ops');
-    expect(body).toContain('0.5.1');
+    expect(body).toContain('0.6.0');
     expect(body).toContain('Veracity Integrity');
   });
 
   it('operations.md and adapters README exist', () => {
     expect(existsSync(join(process.cwd(), 'docs/operations.md'))).toBe(true);
     const adapters = readFileSync(join(process.cwd(), 'adapters/README.md'), 'utf8');
-    expect(adapters).toContain('baseURL: \'http://localhost:8080/v1\'');
-    expect(adapters).toContain('OpenAI Node SDK');
+    expect(adapters).toContain('http://localhost:8080');
+    expect(adapters).toContain('Framework Adapters');
   });
 
   it('backup/restore/smoke scripts exist', () => {

@@ -1,0 +1,38 @@
+# PhaseOne10841 Gatekeeper Playbook — Canary Response
+# Veracity Integrity LLC · https://VeracityIntegrity.com
+# DEFENSIVE ONLY
+
+id: canary-response
+name: Canary Trigger Response
+description: Respond to canary marker detection in tool args or egress
+
+enabled: true
+tier: contain
+
+match:
+  event_type: canary.trigger
+  severity:
+    - high
+    - critical
+
+actions:
+  - type: emit_alert
+    params:
+      message: "Canary marker detected — possible data exfiltration attempt"
+
+  - type: write_audit
+    params:
+      action: gatekeeper.canary_response
+
+  - type: dashboard_notify
+    params:
+      message: "⚠️ Canary triggered — gatekeeper activated contain response"
+
+  - type: force_approval
+    params:
+      tools:
+        - "*"
+      duration_ms: 300000
+
+cooldown_ms: 30000
+max_executions_per_window: 5

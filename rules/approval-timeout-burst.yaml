@@ -1,0 +1,24 @@
+id: phaseone.approval.timeout_burst
+title: Multiple approval timeouts in session
+description: >
+  Detects multiple approval timeouts occurring within a session.
+  May indicate an unattended agent triggering many destructive actions.
+status: stable
+level: high
+enabled: true
+logsource:
+  product: PhaseOne10841
+detection:
+  selection:
+    event_type: approval_timeout
+  aggregation:
+    type: count
+    group_by:
+      - session_id
+    threshold: 3
+    comparison: gte
+  timewindow:
+    duration_ms: 600000  # 10 minutes
+  condition: selection and aggregation
+falsepositives:
+  - Operators unavailable during off-hours

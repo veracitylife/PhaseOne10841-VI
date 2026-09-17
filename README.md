@@ -1,6 +1,6 @@
 # PhaseOne10841 — Defensive Agent Security Gateway (Agent EDR)
 
-**phaseone-core v0.5.1**
+**phaseone-core v0.7.0**
 
 Watches autonomous agents the way CrowdStrike watches endpoints — **outside** the agent, not via prompt-only hope.
 
@@ -117,7 +117,7 @@ flowchart LR
 | **Alerting** | Webhook on canary / injection blocked / approval timeout |
 | **RBAC lite** | Admin vs viewer emails |
 
-### Phase 5 — Deployable local product (this release)
+### Phase 5 — Deployable local product
 | Feature | Behavior |
 |---------|----------|
 | **OpenAPI** | [`docs/openapi.yaml`](docs/openapi.yaml) covering gateway + admin auth surface |
@@ -132,7 +132,40 @@ flowchart LR
 
 ---
 
-## Quick start — local Docker (Phase 5)
+
+
+### Phase 6 — Operator UX & Integration
+| Feature | Behavior |
+|---------|----------|
+| **Operator CLI** | Full `phaseone` CLI with 18+ commands: health, smoke, migrate, retention, backup, restore, lab, permissions, rules, compose, gui |
+| **CLI commands** | `rules evaluate` — test events against rules; `metrics-sniff` — live metrics sampling |
+| **Local GUI** | Browser-based UI at `:8888` via `npm run phaseone -- gui`; runs same command registry |
+| **CLI docs** | [`docs/cli.md`](docs/cli.md) — comprehensive command reference |
+| **Framework adapters** | LangChain, CrewAI, Claude-style tool-proxy with working examples + enforce wrappers |
+| **Richer detection rules** | Aggregation rules (`count`, `distinct_count`, `sum`, `avg`) with time windows |
+| **New rules** | `brute-force-attempt`, `rapid-tool-calls`, `multi-domain-access`, `high-injection-average`, `approval-timeout-burst` |
+| **OIDC / SSO path** | Enterprise auth via `PHASEONE_OIDC_*` env vars; works alongside email OTP (never weakens MFA default) |
+| **Dashboard Phase 6 nav** | CLI docs link, OIDC status, richer rules visibility |
+
+### Phase 7 — Automated Gatekeeper (this release)
+| Feature | Behavior |
+|---------|----------|
+| **Gatekeeper worker** | Automated defense orchestration: Sense → Decide → Act → Learn loop |
+| **YAML playbooks** | Playbook-based responses in `playbooks/*.yaml` with tiers (observe, contain, harden) |
+| **Playbook tiers** | observe (alert/audit), contain (rate limit, force approval, lower trust), harden (rotate canary, reload rules) |
+| **Human confirmation** | Harden-tier actions require explicit admin confirmation (MFA/RBAC) |
+| **CLI commands** | `gatekeeper status`, `run`, `dry-run`, `list-playbooks`, `llm-check`, `confirm`, `deny` |
+| **Dashboard strip** | Gatekeeper status, pending confirmations, recent actions, runtime overrides |
+| **Runtime overrides** | Temporary policy mutations (deny tool/domain, tighten rate limit) with expiration |
+| **Dry-run mode** | Safe by default — observe without mutations until ready to activate |
+| **LLM advisor** | Optional advisory suggestions via OpenRouter (primary) + Ollama (fallback); LLM advises, playbooks decide |
+| **Audit integration** | All auto-actions logged with actor `gatekeeper`; dashboard notifications |
+| **Gatekeeper docs** | [`docs/gatekeeper.md`](docs/gatekeeper.md) — comprehensive playbook schema and usage |
+
+---
+
+## Quick start — local Docker (Phase 7)
+
 
 ### 1. Onboard
 
@@ -374,7 +407,14 @@ PhaseOne10841ME/
 | SIEM JSONL + webhook, deep replay, approval timeout | **Works** (Phase 3) |
 | Chat proxy + policy + canaries/secrets | **Works** |
 | Injection / permissions / A2A / lab | **Works** (Phase 2) |
-| Framework adapters | **OpenAI works**; LangChain/CrewAI/Claude = docs + thin stubs |
+| Operator CLI + local GUI | **Works** (Phase 6) — 18+ commands, browser UI at :8888 |
+| Framework adapters | **Works** (Phase 6) — OpenAI, LangChain, CrewAI, Claude with enforce wrappers |
+| Aggregation/time-window rules | **Works** (Phase 6) — count, distinct_count, sum, avg with windows |
+| OIDC / SSO enterprise auth | **Works** (Phase 6) — optional alongside email OTP, never weakens MFA |
+| Gatekeeper playbooks + worker | **Works** (Phase 7) — Sense/Decide/Act/Learn with YAML playbooks |
+| Gatekeeper CLI + dashboard strip | **Works** (Phase 7) — status, run, dry-run, list-playbooks, llm-check, confirm/deny |
+| Runtime overrides (temporary policy) | **Works** (Phase 7) — deny tool/domain, rate limit with expiration |
+| LLM advisor for gatekeeper | **Works** (Phase 7) — OpenRouter primary + Ollama fallback; advisory only |
 | In-process OS syscall interception | **Stubbed** — use `/v1/phaseone/tools/enforce` |
 | Full MCP wire proxy | **Stubbed** — `mcp_call` enforce + lab fake-mcp |
 | Attack simulator / offensive labs | **Out of scope** |
@@ -383,13 +423,97 @@ PhaseOne10841ME/
 
 ## Roadmap (indicative)
 
-- Richer rule language (aggregations, time windows)  
-- Deeper framework SDKs (official LangChain / CrewAI packages)  
+- Auto-remediation learning based on playbook effectiveness
+- LLM advisor enhancements (pattern recognition, playbook suggestions)
 - Optional signed canary packages for production deployments  
 - Multi-tenant org controls beyond email allowlists  
-- Hardened SMTP/OIDC SSO for enterprise MFA  
+- Official packaged SDKs (npm/PyPI LangChain/CrewAI adapters)  
+- SAML SSO in addition to OIDC  
+- Kubernetes Helm chart + operator  
 
 Roadmap items are aspirational and may change; contact Veracity Integrity LLC for commercial roadmap discussions.
+
+---
+
+---
+
+## CLI & GUI
+
+PhaseOne10841 includes a first-class operator CLI and local GUI with structured menus and guidance.
+
+### CLI Quick Start
+
+```bash
+# Install
+npm install
+
+# Run CLI commands — grouped by category
+npm run phaseone -- help      # Show grouped help with categories
+npm run phaseone -- menu      # Interactive menu (TTY only)
+npm run phaseone -- version
+npm run phaseone -- health
+
+# Or via npx
+npx phaseone help
+npx phaseone menu
+```
+
+### Command Categories
+
+Commands are organized into five categories for easy navigation:
+
+| Category | Commands | Description |
+|----------|----------|-------------|
+| 🚀 **Getting Started** | `help`, `menu`, `version`, `onboard`, `gui` | Setup and first-run |
+| 🩺 **Health & Ops** | `health`, `ready`, `metrics`, `smoke`, `compose`, `backup`, `migrate`, `metrics-sniff` | Stack operations |
+| 🛡️ **Defense & Detection** | `rules`, `permissions`, `lab` | Rules and validation |
+| 🤖 **Gatekeeper** | `gatekeeper` (status, run, dry-run, list-playbooks, llm-check, confirm, deny) | Automated defense |
+| ⚠️ **Dangerous** | `retention`, `restore` | Data modification (requires `--confirm`) |
+
+### Recommended First Run
+
+```bash
+npm run phaseone -- onboard      # 1. Generate .env configuration
+npm run phaseone -- compose up   # 2. Start Docker services
+npm run phaseone -- health       # 3. Verify services are running
+npm run phaseone -- smoke        # 4. Run smoke tests
+npm run phaseone -- gui          # 5. Launch browser GUI (optional)
+```
+
+### Interactive Menu
+
+```bash
+npm run phaseone -- menu   # Browse categories interactively
+```
+
+The interactive menu provides numbered category navigation with detailed per-command help, examples, and tips.
+
+### Key Gatekeeper Commands
+
+```bash
+npm run phaseone -- gatekeeper status           # View current state
+npm run phaseone -- gatekeeper list-playbooks   # See available playbooks
+npm run phaseone -- gatekeeper dry-run          # Safe test (DEFAULT)
+npm run phaseone -- gatekeeper llm-check        # Check LLM advisor health
+```
+
+> **Gatekeeper safety:** Dry-run is default. Harden-tier actions require human confirmation. LLM advisor is advisory only.
+
+### Local GUI
+
+```bash
+npm run phaseone -- gui
+# Opens http://localhost:8888
+```
+
+A lightweight browser-based interface with:
+- **Category accordion** — Commands grouped by category
+- **Guidance panel** — Recommended first-run path
+- **Examples & tips** — Per-command help with examples
+- **Confirmation dialogs** — Required for destructive actions
+- Live output streaming
+
+**Full CLI documentation:** [`docs/cli.md`](docs/cli.md)
 
 ---
 
@@ -405,4 +529,4 @@ Private product repository — distribution to authorized customers and partners
 
 ## Operator checklist
 
-See [docs/RECOMMENDATIONS.md](docs/RECOMMENDATIONS.md) (approved items 1–9), [docs/rules-tuning.md](docs/rules-tuning.md), and [docs/proxy.md](docs/proxy.md). TLS edge: `docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d`.
+See [docs/RECOMMENDATIONS.md](docs/RECOMMENDATIONS.md) (approved items 1–9), [docs/rules-tuning.md](docs/rules-tuning.md), [docs/cli.md](docs/cli.md), and [docs/proxy.md](docs/proxy.md). TLS edge: `docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d`.

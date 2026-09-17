@@ -68,7 +68,7 @@
     <section class="section" id="walkthrough">
       <div class="container">
         <p class="section-label">Walkthrough</p>
-        <h2>Nine building blocks of Agent EDR</h2>
+        <h2>Eleven building blocks of Agent EDR</h2>
         <p class="section-intro">Each step shows a defensive control that sits <em>outside</em> the model.</p>
 
         <div class="steps">
@@ -431,6 +431,96 @@ approval:
                     <span class="mock-label">mode</span>
                     <span class="mock-value">defensive validation</span>
                   </div>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <!-- 10 Gatekeeper -->
+          <article class="step reverse">
+            <div class="step-copy">
+              <span class="step-num">10</span>
+              <h3>Automated Gatekeeper</h3>
+              <p>
+                YAML playbooks automate defense responses in a <strong>Sense → Decide → Act → Learn</strong> loop.
+                Tiered actions (observe, contain, harden) let operators respond proportionally.
+                High-impact changes require human confirmation—enforcement stays deterministic.
+              </p>
+              <ul>
+                <li><strong>Dry-run mode</strong> — observe without mutations until ready</li>
+                <li><strong>Runtime overrides</strong> — temporary policy (deny tool, tighten rate limit) with auto-expiration</li>
+                <li><strong>LLM advisor</strong> — optional suggestions via OpenRouter / Ollama; LLM advises, playbooks decide</li>
+                <li><strong>Human confirmation</strong> — harden-tier actions wait for admin approval</li>
+              </ul>
+            </div>
+            <div class="step-visual">
+              <div class="mock-ui" aria-hidden="true">
+                <div class="mock-chrome">
+                  <span class="mock-dot r"></span><span class="mock-dot y"></span><span class="mock-dot g"></span>
+                  <span class="mock-title">gatekeeper · playbooks</span>
+                </div>
+                <div class="mock-body">
+                  <pre class="mock-code">id: canary-response
+tier: contain
+match:
+  event_type: canary.trigger
+  severity: [high, critical]
+actions:
+  - type: emit_alert
+  - type: force_approval
+    params:
+      tools: ["*"]
+      duration_ms: 300000</pre>
+                  <div class="mock-row active" style="margin-top: 0.75rem;">
+                    <span class="mock-label">mode</span>
+                    <span class="mock-badge ok">dry-run (safe)</span>
+                  </div>
+                  <div class="mock-row">
+                    <span class="mock-label">pending</span>
+                    <span class="mock-badge warn">1 confirmation</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <!-- 11 CLI & GUI -->
+          <article class="step">
+            <div class="step-copy">
+              <span class="step-num">11</span>
+              <h3>Operator CLI &amp; GUI</h3>
+              <p>
+                A first-class CLI with 20+ commands organized by category, plus a local GUI at <code>:8888</code>.
+                Run <code>phaseone menu</code> for interactive navigation, or use
+                <code>phaseone help &lt;cmd&gt;</code> for detailed examples and tips.
+              </p>
+              <ul>
+                <li><strong>Category menus</strong> — Getting Started, Health &amp; Ops, Defense, Gatekeeper, Dangerous</li>
+                <li><strong>Recommended first run</strong> — onboard → compose up → health → smoke → gui</li>
+                <li><strong>Gatekeeper commands</strong> — status, dry-run, llm-check, confirm/deny</li>
+                <li><strong>Local GUI</strong> — browser-based interface with guidance panel and examples</li>
+              </ul>
+            </div>
+            <div class="step-visual">
+              <div class="mock-ui" aria-hidden="true">
+                <div class="mock-chrome">
+                  <span class="mock-dot r"></span><span class="mock-dot y"></span><span class="mock-dot g"></span>
+                  <span class="mock-title">phaseone · CLI v0.7.0</span>
+                </div>
+                <div class="mock-body">
+                  <pre class="mock-code">📋 RECOMMENDED FIRST RUN:
+
+   1. phaseone onboard       → Generate .env
+   2. phaseone compose up    → Start services
+   3. phaseone health        → Verify running
+   4. phaseone smoke         → Run smoke tests
+   5. phaseone gui           → Launch browser GUI
+
+🚀 GETTING STARTED
+   help, menu, version, onboard, gui
+
+🤖 GATEKEEPER
+   gatekeeper status | dry-run | llm-check</pre>
                 </div>
               </div>
             </div>

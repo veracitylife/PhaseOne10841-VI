@@ -1,0 +1,29 @@
+id: phaseone.injection.high_average
+title: Elevated average injection scores
+description: >
+  Detects when average injection scores across an agent's requests exceed threshold.
+  May indicate persistent prompt injection attempts in conversation.
+status: experimental
+level: high
+enabled: true
+logsource:
+  product: PhaseOne10841
+detection:
+  selection:
+    event_type:
+      - chat_completion
+      - a2a_message
+  aggregation:
+    type: avg
+    field: injection_score
+    group_by:
+      - agent_id
+      - session_id
+    threshold: 0.5
+    comparison: gte
+  timewindow:
+    duration_ms: 600000  # 10 minutes
+  condition: selection and aggregation
+falsepositives:
+  - Security testing
+  - Legitimate discussion of prompt injection topics

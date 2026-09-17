@@ -1,0 +1,25 @@
+id: phaseone.auth.brute_force
+title: Brute force login attempt detected
+description: >
+  Detects multiple failed authentication attempts within a short time window.
+  Defensive rule to identify potential credential attacks against the dashboard.
+status: stable
+level: high
+enabled: true
+logsource:
+  product: PhaseOne10841
+detection:
+  selection:
+    event_type: auth_failure
+  aggregation:
+    type: count
+    group_by:
+      - source_ip
+    threshold: 5
+    comparison: gte
+  timewindow:
+    duration_ms: 300000  # 5 minutes
+  condition: selection and aggregation
+falsepositives:
+  - Legitimate user forgetting password
+  - Shared NAT IP addresses
