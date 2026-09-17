@@ -294,12 +294,12 @@ describe('onboard Phase 4 env', () => {
     expect(env).toContain('PHASEONE_ALERT_WEBHOOK_URL=https://hooks.example/a');
     expect(env).toContain('PHASEONE_RULES_DIR=./rules');
     expect(env).toContain('PHASEONE_VIEWER_EMAILS=v@localhost');
-    expect(env).toMatch(/v0\.[456]/);
+    expect(env).toMatch(/v0\.[4567]/);
   });
 });
 
 describe('gateway config version', () => {
-  it('is semver 0.6.x (Phase 6)', () => {
-    expect(loadConfig().productVersion).toMatch(/^0\.6\./);
+  it('is semver 0.7.x (Phase 7)', () => {
+    expect(loadConfig().productVersion).toMatch(/^0\.7\./);
   });
 });

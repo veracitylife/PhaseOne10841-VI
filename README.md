@@ -1,6 +1,6 @@
 # PhaseOne10841 — Defensive Agent Security Gateway (Agent EDR)
 
-**phaseone-core v0.6.0**
+**phaseone-core v0.7.0**
 
 Watches autonomous agents the way CrowdStrike watches endpoints — **outside** the agent, not via prompt-only hope.
 
@@ -134,7 +134,7 @@ flowchart LR
 
 
 
-### Phase 6 — Operator UX & Integration (this release)
+### Phase 6 — Operator UX & Integration
 | Feature | Behavior |
 |---------|----------|
 | **Operator CLI** | Full `phaseone` CLI with 18+ commands: health, smoke, migrate, retention, backup, restore, lab, permissions, rules, compose, gui |
@@ -147,9 +147,23 @@ flowchart LR
 | **OIDC / SSO path** | Enterprise auth via `PHASEONE_OIDC_*` env vars; works alongside email OTP (never weakens MFA default) |
 | **Dashboard Phase 6 nav** | CLI docs link, OIDC status, richer rules visibility |
 
+### Phase 7 — Automated Gatekeeper (this release)
+| Feature | Behavior |
+|---------|----------|
+| **Gatekeeper worker** | Automated defense orchestration: Sense → Decide → Act → Learn loop |
+| **YAML playbooks** | Playbook-based responses in `playbooks/*.yaml` with tiers (observe, contain, harden) |
+| **Playbook tiers** | observe (alert/audit), contain (rate limit, force approval, lower trust), harden (rotate canary, reload rules) |
+| **Human confirmation** | Harden-tier actions require explicit admin confirmation (MFA/RBAC) |
+| **CLI commands** | `gatekeeper status`, `gatekeeper run`, `gatekeeper dry-run`, `gatekeeper list-playbooks` |
+| **Dashboard strip** | Gatekeeper status, pending confirmations, recent actions, runtime overrides |
+| **Runtime overrides** | Temporary policy mutations (deny tool/domain, tighten rate limit) with expiration |
+| **Dry-run mode** | Safe by default — observe without mutations until ready to activate |
+| **Audit integration** | All auto-actions logged with actor `gatekeeper`; dashboard notifications |
+| **Gatekeeper docs** | [`docs/gatekeeper.md`](docs/gatekeeper.md) — comprehensive playbook schema and usage |
+
 ---
 
-## Quick start — local Docker (Phase 6)
+## Quick start — local Docker (Phase 7)
 
 
 ### 1. Onboard
@@ -396,6 +410,10 @@ PhaseOne10841ME/
 | Framework adapters | **Works** (Phase 6) — OpenAI, LangChain, CrewAI, Claude with enforce wrappers |
 | Aggregation/time-window rules | **Works** (Phase 6) — count, distinct_count, sum, avg with windows |
 | OIDC / SSO enterprise auth | **Works** (Phase 6) — optional alongside email OTP, never weakens MFA |
+| Gatekeeper playbooks + worker | **Works** (Phase 7) — Sense/Decide/Act/Learn with YAML playbooks |
+| Gatekeeper CLI + dashboard strip | **Works** (Phase 7) — status, run, dry-run, list-playbooks, confirm/deny |
+| Runtime overrides (temporary policy) | **Works** (Phase 7) — deny tool/domain, rate limit with expiration |
+| LLM advisor for gatekeeper | **Stubbed** — Roadmap: advisory-only suggestions |
 | In-process OS syscall interception | **Stubbed** — use `/v1/phaseone/tools/enforce` |
 | Full MCP wire proxy | **Stubbed** — `mcp_call` enforce + lab fake-mcp |
 | Attack simulator / offensive labs | **Out of scope** |
@@ -404,6 +422,8 @@ PhaseOne10841ME/
 
 ## Roadmap (indicative)
 
+- LLM advisor for gatekeeper (advisory-only, summarize/suggest)
+- Auto-remediation learning based on playbook effectiveness
 - Optional signed canary packages for production deployments  
 - Multi-tenant org controls beyond email allowlists  
 - Official packaged SDKs (npm/PyPI LangChain/CrewAI adapters)  

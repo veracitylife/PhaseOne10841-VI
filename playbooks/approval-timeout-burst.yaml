@@ -1,0 +1,31 @@
+# PhaseOne10841 Gatekeeper Playbook — Approval Timeout Burst
+# Veracity Integrity LLC · https://VeracityIntegrity.com
+# DEFENSIVE ONLY
+
+id: approval-timeout-burst-response
+name: Approval Timeout Burst Response
+description: Respond to multiple approval timeouts in short window
+
+enabled: true
+tier: observe
+
+match:
+  rule_id: approval-timeout-burst
+  count: 3
+  window_ms: 300000
+
+actions:
+  - type: emit_alert
+    params:
+      message: "Multiple approval timeouts detected — review pending approvals"
+
+  - type: write_audit
+    params:
+      action: gatekeeper.approval_timeout_burst
+
+  - type: dashboard_notify
+    params:
+      message: "⏰ Approval timeout burst — admin attention required"
+
+cooldown_ms: 600000
+max_executions_per_window: 2

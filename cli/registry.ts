@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const ROOT = resolve(__dirname, '..');
 
-export const VERSION = '0.6.0';
+export const VERSION = '0.7.0';
 export const PRODUCT_NAME = 'PhaseOne10841';
 export const COMPANY = 'Veracity Integrity LLC';
 export const WEBSITE = 'https://VeracityIntegrity.com';
@@ -832,6 +832,222 @@ export const commands: CommandDefinition[] = [
       });
 
       return result;
+    },
+  },
+
+  {
+    name: 'gatekeeper',
+    description: 'Manage automated defense playbooks (status, run, dry-run, list-playbooks)',
+    usage: 'phaseone gatekeeper <status|run|dry-run|list-playbooks|confirm|deny> [options]',
+    options: [
+      { flag: 'status', description: 'Show gatekeeper status and config' },
+      { flag: 'run', description: 'Process queued events through playbooks' },
+      { flag: 'dry-run', description: 'Run playbooks in dry-run mode (no mutations)' },
+      { flag: 'list-playbooks', description: 'List available playbooks' },
+      { flag: 'confirm <id>', description: 'Confirm a pending action' },
+      { flag: 'deny <id>', description: 'Deny a pending action' },
+      { flag: '--dir <path>', description: 'Playbooks directory', default: './playbooks' },
+      { flag: '--json', description: 'Output as JSON' },
+      { flag: '--event <json>', description: 'Process a single event (JSON)' },
+    ],
+    execute: async (args) => {
+      let subcommand = 'status';
+      let playbooksDir = process.env.PHASEONE_PLAYBOOKS_DIR ?? join(ROOT, 'playbooks');
+      let json = false;
+      let eventJson = '';
+      let confirmationId = '';
+
+      for (let i = 0; i < args.length; i++) {
+        if (['status', 'run', 'dry-run', 'list-playbooks', 'confirm', 'deny'].includes(args[i])) {
+          subcommand = args[i];
+          if ((subcommand === 'confirm' || subcommand === 'deny') && args[i + 1]) {
+            confirmationId = args[++i];
+          }
+        } else if (args[i] === '--dir' && args[i + 1]) {
+          playbooksDir = args[++i];
+        } else if (args[i] === '--json') {
+          json = true;
+        } else if (args[i] === '--event' && args[i + 1]) {
+          eventJson = args[++i];
+        }
+      }
+
+      try {
+        const { loadPlaybooks, listPlaybooksDetailed } = await import('../gatekeeper/src/playbooks.js');
+        const {
+          getGatekeeperStatus,
+          processEvent,
+          runGatekeeperCycle,
+          confirmPendingAction,
+          denyPendingAction,
+          loadGatekeeperConfig,
+        } = await import('../gatekeeper/src/worker.js');
+
+        if (subcommand === 'list-playbooks') {
+          const playbooks = listPlaybooksDetailed(playbooksDir);
+
+          if (json) {
+            return { ok: true, exitCode: 0, output: JSON.stringify(playbooks, null, 2), data: playbooks };
+          }
+
+          const lines = [`${PRODUCT_NAME} Gatekeeper Playbooks`, `Directory: ${playbooksDir}`, ''];
+          if (playbooks.length === 0) {
+            lines.push('No playbooks found.');
+          } else {
+            const tierOrder = { observe: 1, contain: 2, harden: 3 };
+            const sorted = [...playbooks].sort((a, b) => tierOrder[a.tier] - tierOrder[b.tier]);
+
+            for (const p of sorted) {
+              const status = p.enabled ? '' : ' (disabled)';
+              const tierIcon = p.tier === 'observe' ? '👁️' : p.tier === 'contain' ? '🛡️' : '🔒';
+              lines.push(`  ${tierIcon} [${p.tier.toUpperCase()}] ${p.id}${status}`);
+              lines.push(`     ${p.name}`);
+              if (p.description) lines.push(`     ${p.description}`);
+              lines.push(`     Actions: ${p.actions.map(a => a.type).join(', ')}`);
+              lines.push('');
+            }
+          }
+          lines.push(`${playbooks.length} playbook(s) found`, '', `${COMPANY}`);
+          return { ok: true, exitCode: 0, output: lines.join('\n'), data: playbooks };
+        }
+
+        if (subcommand === 'status') {
+          const status = getGatekeeperStatus();
+          const config = loadGatekeeperConfig();
+
+          if (json) {
+            return { ok: true, exitCode: 0, output: JSON.stringify({ status, config }, null, 2), data: { status, config } };
+          }
+
+          const lines = [
+            `${PRODUCT_NAME} Gatekeeper Status`,
+            '',
+            `Enabled: ${status.state.enabled ? '✓ Yes' : '✗ No'}`,
+            `Dry-run: ${status.state.dry_run ? '✓ Yes (safe mode)' : '✗ No (live)'}`,
+            `Last run: ${status.state.last_run_at ?? 'Never'}`,
+            `Executions: ${status.state.executions_count}`,
+            `Pending confirmations: ${status.state.pending_confirmations.length}`,
+            `Recent actions: ${status.state.recent_actions.length}`,
+            `Queue size: ${status.queue_size}`,
+            '',
+            'Configuration:',
+            `  Playbooks dir: ${config.playbooks_dir}`,
+            `  Poll interval: ${config.poll_interval_ms}ms`,
+            `  Event window: ${config.event_window_ms}ms`,
+            `  Webhook: ${config.webhook_url ?? '(not set)'}`,
+            '',
+          ];
+
+          if (status.state.pending_confirmations.length > 0) {
+            lines.push('Pending Confirmations:');
+            for (const p of status.state.pending_confirmations) {
+              lines.push(`  ${p.id}: ${p.action_type} (${p.playbook_id}) — expires ${p.expires_at}`);
+            }
+            lines.push('');
+          }
+
+          if (Object.keys(status.overrides).length > 0) {
+            lines.push('Active Overrides:');
+            for (const [k, v] of Object.entries(status.overrides)) {
+              lines.push(`  ${k}: ${JSON.stringify(v)}`);
+            }
+            lines.push('');
+          }
+
+          lines.push(`${COMPANY}`);
+          return { ok: true, exitCode: 0, output: lines.join('\n'), data: { status, config } };
+        }
+
+        if (subcommand === 'run' || subcommand === 'dry-run') {
+          const dryRun = subcommand === 'dry-run';
+
+          if (eventJson) {
+            const event = JSON.parse(eventJson);
+            event.id = event.id ?? `cli-${Date.now()}`;
+            event.timestamp = event.timestamp ?? Date.now();
+            const executions = await processEvent(event, { dryRunOverride: dryRun, playbooksDir });
+
+            if (json) {
+              return { ok: true, exitCode: 0, output: JSON.stringify({ event, executions }, null, 2), data: { event, executions } };
+            }
+
+            const lines = [`${PRODUCT_NAME} Gatekeeper ${dryRun ? 'Dry-Run' : 'Run'}`, ''];
+            lines.push(`Event: ${event.event_type} (${event.rule_id ?? 'no rule'})`);
+            if (executions.length === 0) {
+              lines.push('No playbooks matched.');
+            } else {
+              lines.push(`Matched ${executions.length} playbook(s):`);
+              for (const exec of executions) {
+                lines.push(`  ${exec.playbook_name} (${exec.tier})`);
+                for (const action of exec.actions) {
+                  const icon = action.ok ? '✓' : action.requires_confirmation ? '⏳' : '✗';
+                  lines.push(`    ${icon} ${action.action_type}: ${action.detail ?? action.error ?? 'done'}`);
+                }
+              }
+            }
+            lines.push('', `${COMPANY}`);
+            return { ok: true, exitCode: 0, output: lines.join('\n'), data: { event, executions } };
+          }
+
+          const result = await runGatekeeperCycle({ dryRunOverride: dryRun, playbooksDir });
+
+          if (json) {
+            return { ok: true, exitCode: 0, output: JSON.stringify(result, null, 2), data: result };
+          }
+
+          const lines = [
+            `${PRODUCT_NAME} Gatekeeper ${dryRun ? 'Dry-Run' : 'Run'} Complete`,
+            '',
+            `Processed: ${result.processed} event(s)`,
+            `Executions: ${result.executions.length}`,
+          ];
+          if (result.executions.length > 0) {
+            lines.push('', 'Playbooks executed:');
+            for (const exec of result.executions) {
+              lines.push(`  ${exec.playbook_name} — ${exec.actions.length} action(s)`);
+            }
+          }
+          lines.push('', `${COMPANY}`);
+          return { ok: true, exitCode: 0, output: lines.join('\n'), data: result };
+        }
+
+        if (subcommand === 'confirm') {
+          if (!confirmationId) {
+            return { ok: false, exitCode: 1, output: '', error: 'Usage: phaseone gatekeeper confirm <id>' };
+          }
+          const result = await confirmPendingAction(confirmationId, 'cli-admin');
+
+          if (json) {
+            return { ok: result.ok, exitCode: result.ok ? 0 : 1, output: JSON.stringify(result, null, 2), data: result };
+          }
+
+          if (result.ok) {
+            return { ok: true, exitCode: 0, output: `✓ Confirmed: ${confirmationId}\n${result.execution?.actions[0]?.detail ?? ''}` };
+          }
+          return { ok: false, exitCode: 1, output: '', error: result.error ?? 'Failed to confirm' };
+        }
+
+        if (subcommand === 'deny') {
+          if (!confirmationId) {
+            return { ok: false, exitCode: 1, output: '', error: 'Usage: phaseone gatekeeper deny <id>' };
+          }
+          const result = await denyPendingAction(confirmationId, 'cli-admin');
+
+          if (json) {
+            return { ok: result.ok, exitCode: result.ok ? 0 : 1, output: JSON.stringify(result, null, 2), data: result };
+          }
+
+          if (result.ok) {
+            return { ok: true, exitCode: 0, output: `✓ Denied: ${confirmationId}` };
+          }
+          return { ok: false, exitCode: 1, output: '', error: result.error ?? 'Failed to deny' };
+        }
+
+        return { ok: false, exitCode: 1, output: '', error: 'Unknown subcommand. Use: status, run, dry-run, list-playbooks, confirm, deny' };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, exitCode: 1, output: '', error: `Gatekeeper error: ${msg}` };
+      }
     },
   },
 ];

@@ -128,18 +128,18 @@ describe('onboard Phase 5 env', () => {
     expect(env).toContain('PHASEONE_API_RATE_LIMIT=');
     expect(env).toContain('PHASEONE_OTP_RATE_LIMIT=');
     expect(env).toContain('PHASEONE_BACKUP_DIR=');
-    expect(env).toContain('v0.6');
+    expect(env).toContain('v0.7');
   });
 });
 
 describe('version & docs artifacts', () => {
-  it('config productVersion is 0.6.0', () => {
-    expect(loadConfig().productVersion).toBe('0.6.0');
+  it('config productVersion is 0.7.0', () => {
+    expect(loadConfig().productVersion).toBe('0.7.0');
   });
 
-  it('package.json is 0.6.0', () => {
+  it('package.json is 0.7.0', () => {
     const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'));
-    expect(pkg.version).toBe('0.6.0');
+    expect(pkg.version).toBe('0.7.0');
     expect(pkg.scripts.smoke).toBeTruthy();
     expect(pkg.scripts.retention).toBeTruthy();
     expect(pkg.scripts.backup).toBeTruthy();

@@ -43,7 +43,7 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const GATEWAY_URL = process.env.GATEWAY_URL ?? 'http://gateway:8080';
 const PORT = Number(process.env.DASHBOARD_PORT ?? 3000);
-const VERSION = '0.6.0';
+const VERSION = '0.7.0';
 
 const app = new Hono();
 const authCfg = loadAuthConfig();
@@ -353,6 +353,14 @@ proxyGet('/api/ops', '/v1/phaseone/ops');
 proxyGet('/api/retention', '/v1/phaseone/retention');
 proxyGet('/api/rate-limits', '/v1/phaseone/rate-limits');
 
+proxyGet('/api/gatekeeper/status', '/v1/phaseone/gatekeeper/status');
+proxyGet('/api/gatekeeper/config', '/v1/phaseone/gatekeeper/config');
+proxyGet('/api/gatekeeper/playbooks', '/v1/phaseone/gatekeeper/playbooks');
+proxyGet('/api/gatekeeper/pending', '/v1/phaseone/gatekeeper/pending');
+proxyGet('/api/gatekeeper/recent', '/v1/phaseone/gatekeeper/recent');
+proxyGet('/api/gatekeeper/overrides', '/v1/phaseone/gatekeeper/overrides');
+proxyGet('/api/gatekeeper/notifications', '/v1/phaseone/gatekeeper/notifications');
+
 app.get('/api/security/cookies', (c) => {
   const auth = gate(c);
   if (!auth.ok) return c.json({ error: auth.error }, 401);
@@ -507,6 +515,58 @@ app.post('/api/alerts/test', async (c) => {
     method: 'POST',
     body: JSON.stringify({ ...body, actor_email: auth.email }),
   });
+  return c.json(data, status as 200);
+});
+
+app.post('/api/gatekeeper/config', async (c) => {
+  const auth = requireMutatingAuth(c);
+  if (!auth.ok) return c.json({ error: auth.error }, auth.status);
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const { status, data } = await gw('/v1/phaseone/gatekeeper/config', {
+    method: 'POST',
+    body: JSON.stringify({ ...body, actor_email: auth.email }),
+  });
+  return c.json(data, status as 200);
+});
+
+app.post('/api/gatekeeper/run', async (c) => {
+  const auth = requireMutatingAuth(c);
+  if (!auth.ok) return c.json({ error: auth.error }, auth.status);
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const { status, data } = await gw('/v1/phaseone/gatekeeper/run', {
+    method: 'POST',
+    body: JSON.stringify({ ...body, actor_email: auth.email }),
+  });
+  return c.json(data, status as 200);
+});
+
+app.post('/api/gatekeeper/confirm/:id', async (c) => {
+  const auth = requireMutatingAuth(c);
+  if (!auth.ok) return c.json({ error: auth.error }, auth.status);
+  const { status, data } = await gw(`/v1/phaseone/gatekeeper/confirm/${c.req.param('id')}`, {
+    method: 'POST',
+    body: JSON.stringify({ actor_email: auth.email }),
+  });
+  await recordAudit({
+    actor_email: auth.email,
+    action: 'gatekeeper.confirm',
+    resource: c.req.param('id'),
+  }).catch(() => undefined);
+  return c.json(data, status as 200);
+});
+
+app.post('/api/gatekeeper/deny/:id', async (c) => {
+  const auth = requireMutatingAuth(c);
+  if (!auth.ok) return c.json({ error: auth.error }, auth.status);
+  const { status, data } = await gw(`/v1/phaseone/gatekeeper/deny/${c.req.param('id')}`, {
+    method: 'POST',
+    body: JSON.stringify({ actor_email: auth.email }),
+  });
+  await recordAudit({
+    actor_email: auth.email,
+    action: 'gatekeeper.deny',
+    resource: c.req.param('id'),
+  }).catch(() => undefined);
   return c.json(data, status as 200);
 });
 
