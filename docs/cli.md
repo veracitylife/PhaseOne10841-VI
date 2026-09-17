@@ -12,6 +12,8 @@ Operator command-line interface and local GUI for PhaseOne10841 defensive Agent 
 
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [Menu Navigation](#menu-navigation)
+- [Command Categories](#command-categories)
 - [CLI Commands](#cli-commands)
 - [GUI Usage](#gui-usage)
 - [Windows Notes](#windows-notes)
@@ -102,6 +104,132 @@ npm run phaseone -- gui
 
 ---
 
+## Menu Navigation
+
+The CLI provides structured menus and guidance for easy navigation:
+
+### Grouped Help (Default)
+
+Running `phaseone`, `phaseone help`, or `phaseone -h` shows commands organized by category:
+
+```bash
+phaseone           # Shows grouped help with categories
+phaseone help      # Same as above
+phaseone -h        # Same as above
+```
+
+### Interactive Menu
+
+For an interactive experience (TTY environments only):
+
+```bash
+phaseone menu      # Interactive category/command selection
+```
+
+The interactive menu lets you:
+1. Browse numbered categories
+2. Select a category to see its commands
+3. Select a command to see detailed help with examples
+
+> **Note:** In CI environments or non-TTY shells, `menu` falls back to grouped help output.
+
+### Command-Specific Help
+
+Get detailed help for any command:
+
+```bash
+phaseone help <command>     # Detailed help with examples
+phaseone <command> --help   # Same as above
+phaseone <command> -h       # Same as above
+```
+
+### Friendly Error Messages
+
+Unknown commands suggest similar matches:
+
+```bash
+$ phaseone helth
+❌ Unknown command: helth
+
+Did you mean:
+  • health — Check gateway and dashboard health endpoints
+
+📋 Run `phaseone help` to see all commands.
+📋 Run `phaseone menu` for interactive navigation.
+```
+
+---
+
+## Command Categories
+
+Commands are organized into five categories:
+
+### 🚀 Getting Started
+Setup and first-run commands.
+
+| Command | Description |
+|---------|-------------|
+| `help` | Show help and available commands |
+| `menu` | Interactive menu for exploring commands |
+| `version` | Show version information |
+| `onboard` | Run interactive onboarding or generate .env |
+| `gui` | Launch local GUI for CLI commands |
+
+### 🩺 Health & Operations
+Health checks, metrics, and stack operations.
+
+| Command | Description |
+|---------|-------------|
+| `health` | Check gateway and dashboard health endpoints |
+| `ready` | Check if services are ready (gateway + db) |
+| `metrics` | Fetch Prometheus metrics from gateway |
+| `metrics-sniff` | Sniff and display live metrics summary |
+| `smoke` | Run post-compose smoke tests |
+| `migrate` | Run database migrations |
+| `compose` | Docker Compose operations (up, down, ps, logs) |
+| `backup` | Backup Postgres + policy + rules |
+
+### 🛡️ Defense & Detection
+Rules, permissions, and lab validation.
+
+| Command | Description |
+|---------|-------------|
+| `rules` | List or evaluate detection rules |
+| `permissions` | Analyze tool permissions and capability matrix |
+| `lab` | Run defensive lab harness (inert fixtures + detectors) |
+
+### 🤖 Gatekeeper (Phase 7)
+Automated defense playbooks and orchestration.
+
+| Command | Description |
+|---------|-------------|
+| `gatekeeper` | Manage automated defense playbooks |
+
+**Subcommands:**
+- `status` — Show gatekeeper status and config
+- `run` — Process queued events through playbooks
+- `dry-run` — Run playbooks in dry-run mode (DEFAULT, safe)
+- `list-playbooks` — List available playbooks
+- `confirm <id>` — Confirm a pending action
+- `deny <id>` — Deny a pending action
+- `llm-check` — Check LLM advisor configuration and health
+
+> **Important Gatekeeper Notes:**
+> - 🛡️ **DRY-RUN IS DEFAULT** — no mutations without explicit `run`
+> - 🔒 **HARDEN tier actions require human confirmation**
+> - 🤖 **LLM advisor is ADVISORY ONLY** — playbooks decide mutations
+
+### ⚠️ Dangerous (Data Modification)
+Commands that modify data — require `--confirm`.
+
+| Command | Description |
+|---------|-------------|
+| `retention` ⚠️ | Run event retention cleanup |
+| `restore` ⚠️ | Restore from backup directory |
+| `compose down` ⚠️ | Stop and remove containers |
+
+---
+
 ## CLI Commands
 
 ### `help`
@@ -124,8 +252,8 @@ phaseone version
 Output:
 
 ```
-PhaseOne10841 v0.6.0
-CLI v0.6.0
+PhaseOne10841 v0.7.0
+CLI v0.7.0
 Veracity Integrity LLC
 https://VeracityIntegrity.com
 

@@ -37,15 +37,25 @@ export interface CommandResult {
   data?: unknown;
 }
 
+export type CommandCategory = 
+  | 'getting-started'
+  | 'health-ops'
+  | 'defense-detection'
+  | 'gatekeeper'
+  | 'dangerous';
+
 export interface CommandDefinition {
   name: string;
   description: string;
   usage: string;
+  category?: CommandCategory;
   options?: Array<{
     flag: string;
     description: string;
     default?: string;
   }>;
+  examples?: string[];
+  tips?: string[];
   dangerous?: boolean;
   requiresConfirmation?: boolean;
   execute: (args: string[], opts: CommandOptions) => Promise<CommandResult>;
@@ -59,6 +69,42 @@ export interface CommandOptions {
   onError?: (data: string) => void;
   confirm?: boolean;
 }
+
+export const CATEGORY_INFO: Record<CommandCategory, { label: string; icon: string; description: string }> = {
+  'getting-started': {
+    label: 'Getting Started',
+    icon: '🚀',
+    description: 'Setup and first-run commands',
+  },
+  'health-ops': {
+    label: 'Health & Operations',
+    icon: '🩺',
+    description: 'Health checks, metrics, and stack operations',
+  },
+  'defense-detection': {
+    label: 'Defense & Detection',
+    icon: '🛡️',
+    description: 'Rules, permissions, and lab validation',
+  },
+  'gatekeeper': {
+    label: 'Gatekeeper (Phase 7)',
+    icon: '🤖',
+    description: 'Automated defense playbooks and orchestration',
+  },
+  'dangerous': {
+    label: 'Dangerous (⚠️ Data Modification)',
+    icon: '⚠️',
+    description: 'Commands that modify data — require --confirm',
+  },
+};
+
+export const RECOMMENDED_FIRST_RUN = [
+  { step: 1, cmd: 'onboard', desc: 'Generate .env configuration' },
+  { step: 2, cmd: 'compose up', desc: 'Start Docker services' },
+  { step: 3, cmd: 'health', desc: 'Verify services are running' },
+  { step: 4, cmd: 'smoke', desc: 'Run smoke tests' },
+  { step: 5, cmd: 'gui', desc: 'Launch browser GUI (optional)' },
+];
 
 function getEnvWithDefaults(): Record<string, string> {
   const env = { ...process.env } as Record<string, string>;
@@ -155,61 +201,240 @@ async function runTsx(scriptPath: string, args: string[], opts: CommandOptions =
   return runCommand(tsxPath, [fullPath, ...args], opts);
 }
 
+function formatGroupedHelp(): string {
+  const lines = [
+    BANNER,
+    '',
+    '┌─────────────────────────────────────────────────────────────┐',
+    '│  DEFENSIVE ONLY — no exploit tooling                       │',
+    '│  Product: https://phaseone10841.me                         │',
+    '│  Company: https://VeracityIntegrity.com                    │',
+    '└─────────────────────────────────────────────────────────────┘',
+    '',
+    '📋 RECOMMENDED FIRST RUN:',
+    '',
+  ];
+
+  for (const step of RECOMMENDED_FIRST_RUN) {
+    lines.push(`   ${step.step}. phaseone ${step.cmd.padEnd(14)} → ${step.desc}`);
+  }
+
+  lines.push('', '─'.repeat(65), '');
+
+  const categoryOrder: CommandCategory[] = ['getting-started', 'health-ops', 'defense-detection', 'gatekeeper', 'dangerous'];
+  
+  for (const category of categoryOrder) {
+    const info = CATEGORY_INFO[category];
+    const cmds = commands.filter(c => c.category === category || (category === 'dangerous' && c.dangerous && c.category !== 'gatekeeper'));
+    
+    if (cmds.length === 0) continue;
+
+    lines.push(`${info.icon} ${info.label.toUpperCase()}`);
+    lines.push(`   ${info.description}`);
+    lines.push('');
+
+    const maxLen = Math.max(...cmds.map(c => c.name.length));
+    for (const cmd of cmds) {
+      const warn = cmd.dangerous ? ' ⚠️' : '';
+      lines.push(`   ${cmd.name.padEnd(maxLen + 2)} ${cmd.description}${warn}`);
+    }
+    lines.push('');
+  }
+
+  lines.push('─'.repeat(65));
+  lines.push('');
+  lines.push('💡 TIPS:');
+  lines.push('   • Run `phaseone help <command>` for detailed usage + examples');
+  lines.push('   • Run `phaseone menu` for interactive exploration');
+  lines.push('   • Commands marked ⚠️ require --confirm for destructive actions');
+  lines.push('');
+  lines.push(`${COMPANY} · ${WEBSITE}`);
+
+  return lines.join('\n');
+}
+
+function formatCommandHelp(cmd: CommandDefinition): string {
+  const lines = [
+    BANNER,
+    '',
+    `━━━ ${cmd.name.toUpperCase()} ━━━`,
+    '',
+    `📖 Description: ${cmd.description}`,
+    '',
+    `📝 Usage: ${cmd.usage}`,
+  ];
+
+  if (cmd.category) {
+    const info = CATEGORY_INFO[cmd.category];
+    lines.push('', `📁 Category: ${info.icon} ${info.label}`);
+  }
+
+  if (cmd.options?.length) {
+    lines.push('', '⚙️  Options:');
+    for (const opt of cmd.options) {
+      const def = opt.default ? ` (default: ${opt.default})` : '';
+      lines.push(`   ${opt.flag.padEnd(26)} ${opt.description}${def}`);
+    }
+  }
+
+  if (cmd.examples?.length) {
+    lines.push('', '💻 Examples:');
+    for (const ex of cmd.examples) {
+      lines.push(`   ${ex}`);
+    }
+  }
+
+  if (cmd.tips?.length) {
+    lines.push('', '💡 Tips:');
+    for (const tip of cmd.tips) {
+      lines.push(`   • ${tip}`);
+    }
+  }
+
+  if (cmd.dangerous) {
+    lines.push('');
+    lines.push('⚠️  WARNING: This command modifies data.');
+    lines.push('   Pass --confirm to execute, or use --dry-run to preview.');
+  }
+
+  lines.push('', '─'.repeat(50));
+  lines.push(`${COMPANY} · ${WEBSITE}`);
+
+  return lines.join('\n');
+}
+
+function suggestCommands(input: string): string {
+  const lowerInput = input.toLowerCase();
+  const matches = commands.filter(c => 
+    c.name.toLowerCase().includes(lowerInput) ||
+    c.description.toLowerCase().includes(lowerInput)
+  ).slice(0, 3);
+
+  if (matches.length === 0) return '';
+
+  return `\nDid you mean:\n${matches.map(m => `  • ${m.name} — ${m.description}`).join('\n')}`;
+}
+
+async function runInteractiveMenu(): Promise<string> {
+  const readline = await import('node:readline');
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  const prompt = (q: string): Promise<string> => new Promise(resolve => {
+    rl.question(q, answer => resolve(answer.trim()));
+  });
+
+  const categoryOrder: CommandCategory[] = ['getting-started', 'health-ops', 'defense-detection', 'gatekeeper', 'dangerous'];
+  
+  console.log(BANNER);
+  console.log('');
+  console.log('📋 INTERACTIVE MENU — Select a category:');
+  console.log('');
+
+  categoryOrder.forEach((cat, i) => {
+    const info = CATEGORY_INFO[cat];
+    const count = commands.filter(c => c.category === cat || (cat === 'dangerous' && c.dangerous)).length;
+    console.log(`  ${i + 1}. ${info.icon} ${info.label} (${count} commands)`);
+  });
+  console.log('');
+  console.log('  0. Exit');
+  console.log('');
+
+  const categoryChoice = await prompt('Enter number (0-5): ');
+  const catIndex = parseInt(categoryChoice, 10);
+
+  if (isNaN(catIndex) || catIndex === 0 || catIndex < 0 || catIndex > categoryOrder.length) {
+    rl.close();
+    return '\n✓ Exited menu. Run `phaseone help` anytime.\n';
+  }
+
+  const selectedCategory = categoryOrder[catIndex - 1];
+  const catInfo = CATEGORY_INFO[selectedCategory];
+  const catCommands = commands.filter(c => 
+    c.category === selectedCategory || 
+    (selectedCategory === 'dangerous' && c.dangerous)
+  );
+
+  console.log('');
+  console.log(`${catInfo.icon} ${catInfo.label.toUpperCase()}`);
+  console.log(`   ${catInfo.description}`);
+  console.log('');
+
+  catCommands.forEach((cmd, i) => {
+    const warn = cmd.dangerous ? ' ⚠️' : '';
+    console.log(`  ${i + 1}. ${cmd.name}${warn} — ${cmd.description}`);
+  });
+  console.log('');
+  console.log('  0. Back to categories');
+  console.log('');
+
+  const cmdChoice = await prompt(`Select command (0-${catCommands.length}): `);
+  const cmdIndex = parseInt(cmdChoice, 10);
+
+  rl.close();
+
+  if (isNaN(cmdIndex) || cmdIndex === 0 || cmdIndex < 0 || cmdIndex > catCommands.length) {
+    return '\n✓ Exited menu. Run `phaseone menu` to try again.\n';
+  }
+
+  const selectedCmd = catCommands[cmdIndex - 1];
+  return '\n' + formatCommandHelp(selectedCmd);
+}
+
 export const commands: CommandDefinition[] = [
   {
     name: 'help',
     description: 'Show help and available commands',
     usage: 'phaseone help [command]',
+    category: 'getting-started',
+    examples: [
+      'phaseone help              # Show all commands by category',
+      'phaseone help onboard      # Detailed help for onboard command',
+      'phaseone help gatekeeper   # Learn about gatekeeper commands',
+    ],
     execute: async (args) => {
       const cmdName = args[0];
       if (cmdName) {
         const cmd = commands.find((c) => c.name === cmdName);
         if (!cmd) {
+          const suggestions = suggestCommands(cmdName);
           return {
             ok: false,
             exitCode: 1,
             output: '',
-            error: `Unknown command: ${cmdName}\nRun 'phaseone help' for available commands.`,
+            error: `Unknown command: ${cmdName}\n${suggestions}\nRun 'phaseone help' or 'phaseone menu' for available commands.`,
           };
         }
-        const lines = [
-          BANNER,
-          '',
-          `Command: ${cmd.name}`,
-          `Description: ${cmd.description}`,
-          `Usage: ${cmd.usage}`,
-        ];
-        if (cmd.options?.length) {
-          lines.push('', 'Options:');
-          for (const opt of cmd.options) {
-            lines.push(`  ${opt.flag.padEnd(24)} ${opt.description}${opt.default ? ` (default: ${opt.default})` : ''}`);
-          }
-        }
-        if (cmd.dangerous) {
-          lines.push('', '⚠️  WARNING: This command modifies data. Use with caution.');
-        }
-        return { ok: true, exitCode: 0, output: lines.join('\n') };
+        return { ok: true, exitCode: 0, output: formatCommandHelp(cmd) };
       }
 
-      const lines = [
-        BANNER,
-        '',
-        'Usage: phaseone <command> [options]',
-        '',
-        'Commands:',
-      ];
-      const maxLen = Math.max(...commands.map((c) => c.name.length));
-      for (const cmd of commands) {
-        const warn = cmd.dangerous ? ' ⚠️' : '';
-        lines.push(`  ${cmd.name.padEnd(maxLen + 2)} ${cmd.description}${warn}`);
+      return { ok: true, exitCode: 0, output: formatGroupedHelp() };
+    },
+  },
+
+  {
+    name: 'menu',
+    description: 'Interactive menu for exploring commands',
+    usage: 'phaseone menu',
+    category: 'getting-started',
+    examples: [
+      'phaseone menu   # Launch interactive menu (TTY)',
+      'phaseone help   # Non-interactive alternative',
+    ],
+    tips: [
+      'In non-TTY environments (CI), menu falls back to help output',
+      'Use arrow keys or numbers to navigate categories',
+    ],
+    execute: async () => {
+      const isTTY = process.stdin.isTTY && !process.env.CI;
+      
+      if (!isTTY) {
+        return { ok: true, exitCode: 0, output: formatGroupedHelp() };
       }
-      lines.push(
-        '',
-        'Run `phaseone help <command>` for detailed usage.',
-        '',
-        `${COMPANY} · ${WEBSITE}`,
-      );
-      return { ok: true, exitCode: 0, output: lines.join('\n') };
+
+      return { ok: true, exitCode: 0, output: await runInteractiveMenu() };
     },
   },
 
@@ -217,6 +442,11 @@ export const commands: CommandDefinition[] = [
     name: 'version',
     description: 'Show version information',
     usage: 'phaseone version',
+    category: 'getting-started',
+    examples: [
+      'phaseone version           # Display current version',
+      'phaseone -v                # Short form',
+    ],
     execute: async () => {
       const pkgPath = join(ROOT, 'package.json');
       let pkgVersion = VERSION;
@@ -243,10 +473,21 @@ export const commands: CommandDefinition[] = [
     name: 'onboard',
     description: 'Run interactive onboarding or generate .env with defaults',
     usage: 'phaseone onboard [--defaults] [--out <path>]',
+    category: 'getting-started',
     options: [
       { flag: '--defaults, -y', description: 'Non-interactive with default values' },
       { flag: '--out, -o <path>', description: 'Output path for .env file', default: '.env' },
       { flag: '--force, -f', description: 'Overwrite existing file without backup' },
+    ],
+    examples: [
+      'phaseone onboard                     # Interactive wizard',
+      'phaseone onboard --defaults          # Quick setup with defaults',
+      'phaseone onboard --defaults --force  # Overwrite existing .env',
+    ],
+    tips: [
+      'Run this FIRST before compose up',
+      'Configures database, gateway, dashboard, and gatekeeper LLM',
+      'Backs up existing .env unless --force is used',
     ],
     execute: async (args, opts) => {
       return runTsx('scripts/onboard.ts', args, opts);
@@ -257,10 +498,21 @@ export const commands: CommandDefinition[] = [
     name: 'health',
     description: 'Check gateway and dashboard health endpoints',
     usage: 'phaseone health [--gateway <url>] [--dashboard <url>]',
+    category: 'health-ops',
     options: [
       { flag: '--gateway <url>', description: 'Gateway URL', default: 'http://localhost:8080' },
       { flag: '--dashboard <url>', description: 'Dashboard URL', default: 'http://localhost:3000' },
       { flag: '--json', description: 'Output as JSON' },
+    ],
+    examples: [
+      'phaseone health                           # Check local services',
+      'phaseone health --json                    # JSON output for scripts',
+      'phaseone health --gateway http://gw:8080  # Custom gateway URL',
+    ],
+    tips: [
+      'Run after `compose up` to verify services started',
+      'Use --json for CI/scripting integration',
+      'Check individual endpoints if some fail',
     ],
     execute: async (args, opts) => {
       const env = getEnvWithDefaults();
@@ -327,9 +579,18 @@ export const commands: CommandDefinition[] = [
     name: 'ready',
     description: 'Check if services are ready (gateway + db)',
     usage: 'phaseone ready [--gateway <url>]',
+    category: 'health-ops',
     options: [
       { flag: '--gateway <url>', description: 'Gateway URL', default: 'http://localhost:8080' },
       { flag: '--json', description: 'Output as JSON' },
+    ],
+    examples: [
+      'phaseone ready         # Quick readiness check',
+      'phaseone ready --json  # For scripting',
+    ],
+    tips: [
+      'Use in startup scripts to wait for services',
+      'Checks both gateway and database connectivity',
     ],
     execute: async (args) => {
       const env = getEnvWithDefaults();
@@ -363,8 +624,17 @@ export const commands: CommandDefinition[] = [
     name: 'metrics',
     description: 'Fetch Prometheus metrics from gateway',
     usage: 'phaseone metrics [--gateway <url>]',
+    category: 'health-ops',
     options: [
       { flag: '--gateway <url>', description: 'Gateway URL', default: 'http://localhost:8080' },
+    ],
+    examples: [
+      'phaseone metrics                    # Full Prometheus output',
+      'phaseone metrics | grep phaseone_   # Filter PhaseOne metrics',
+    ],
+    tips: [
+      'Use metrics-sniff for a summarized view',
+      'Metrics are in Prometheus text format',
     ],
     execute: async (args) => {
       const env = getEnvWithDefaults();
@@ -389,9 +659,18 @@ export const commands: CommandDefinition[] = [
     name: 'smoke',
     description: 'Run post-compose smoke tests',
     usage: 'phaseone smoke [--gateway <url>] [--dashboard <url>]',
+    category: 'health-ops',
     options: [
       { flag: '--gateway <url>', description: 'Gateway URL', default: 'http://localhost:8080' },
       { flag: '--dashboard <url>', description: 'Dashboard URL', default: 'http://localhost:3000' },
+    ],
+    examples: [
+      'phaseone smoke                       # Run all smoke tests',
+      'phaseone smoke --gateway http://..   # Custom gateway',
+    ],
+    tips: [
+      'Run after health passes to validate full functionality',
+      'Tests: healthz, metrics, chat, policy deny, canary, ops endpoint',
     ],
     execute: async (args, opts) => {
       const env: Record<string, string> = {};
@@ -407,6 +686,14 @@ export const commands: CommandDefinition[] = [
     name: 'migrate',
     description: 'Run database migrations',
     usage: 'phaseone migrate',
+    category: 'health-ops',
+    examples: [
+      'phaseone migrate  # Apply pending migrations',
+    ],
+    tips: [
+      'Usually handled automatically by compose up',
+      'Safe to run multiple times (idempotent)',
+    ],
     execute: async (args, opts) => {
       return runTsx('db/migrate.ts', args, opts);
     },
@@ -416,10 +703,21 @@ export const commands: CommandDefinition[] = [
     name: 'retention',
     description: 'Run event retention cleanup',
     usage: 'phaseone retention [--dry-run] [--execute] [--days <n>]',
+    category: 'dangerous',
     options: [
       { flag: '--dry-run, -n', description: 'Preview what would be deleted (default)' },
       { flag: '--execute, --apply', description: 'Actually delete old data' },
       { flag: '--days, -d <n>', description: 'Retention period in days', default: '30' },
+    ],
+    examples: [
+      'phaseone retention --dry-run           # Preview (safe)',
+      'phaseone retention --dry-run --days 14 # Preview 14-day retention',
+      'phaseone retention --execute --confirm # Actually delete ⚠️',
+    ],
+    tips: [
+      'ALWAYS run --dry-run first to preview',
+      'Default retention is 30 days',
+      'Requires --confirm for actual deletion',
     ],
     dangerous: true,
     requiresConfirmation: true,
@@ -441,6 +739,15 @@ export const commands: CommandDefinition[] = [
     name: 'backup',
     description: 'Backup Postgres + policy + rules',
     usage: 'phaseone backup',
+    category: 'health-ops',
+    examples: [
+      'phaseone backup  # Create timestamped backup',
+    ],
+    tips: [
+      'Creates backups/YYYYMMDD-HHMMSS/ directory',
+      'Includes: database dump, policy YAML, rules YAML',
+      'Run before restore or major changes',
+    ],
     execute: async (args, opts) => {
       const isWin = process.platform === 'win32';
       if (isWin) {
@@ -455,6 +762,15 @@ export const commands: CommandDefinition[] = [
     name: 'restore',
     description: 'Restore from backup directory',
     usage: 'phaseone restore <backup-dir>',
+    category: 'dangerous',
+    examples: [
+      'phaseone restore backups/20260916-123000 --confirm  # Restore ⚠️',
+    ],
+    tips: [
+      'REPLACES database contents completely',
+      'Always backup current state first',
+      'Windows: Use WSL or Git Bash',
+    ],
     dangerous: true,
     requiresConfirmation: true,
     execute: async (args, opts) => {
@@ -491,6 +807,15 @@ export const commands: CommandDefinition[] = [
     name: 'lab',
     description: 'Run defensive lab harness (inert fixtures + detectors)',
     usage: 'phaseone lab',
+    category: 'defense-detection',
+    examples: [
+      'phaseone lab  # Run lab validation suite',
+    ],
+    tips: [
+      'Uses inert/benign fixtures — no real attacks',
+      'Tests detection accuracy against known patterns',
+      'Returns JSON with stub and monitor results',
+    ],
     execute: async (args, opts) => {
       return runTsx('lab/index.ts', args, opts);
     },
@@ -500,6 +825,16 @@ export const commands: CommandDefinition[] = [
     name: 'permissions',
     description: 'Analyze tool permissions and capability matrix',
     usage: 'phaseone permissions [agent-id]',
+    category: 'defense-detection',
+    examples: [
+      'phaseone permissions                # Analyze default agent',
+      'phaseone permissions my-agent-123   # Analyze specific agent',
+    ],
+    tips: [
+      'Reports capability matrix (filesystem, shell, network, MCP)',
+      'Identifies excessive agency findings',
+      'Useful for security audits',
+    ],
     execute: async (args, opts) => {
       return runTsx('gateway/src/permissions.ts', args, opts);
     },
@@ -509,12 +844,25 @@ export const commands: CommandDefinition[] = [
     name: 'compose',
     description: 'Docker Compose operations (up, down, ps, logs)',
     usage: 'phaseone compose <up|down|ps|logs|restart> [service]',
+    category: 'health-ops',
     options: [
       { flag: 'up', description: 'Start services (--build)' },
       { flag: 'down', description: 'Stop and remove services' },
       { flag: 'ps', description: 'List running services' },
       { flag: 'logs', description: 'Show service logs' },
       { flag: 'restart', description: 'Restart a service' },
+    ],
+    examples: [
+      'phaseone compose up                # Start all services',
+      'phaseone compose up gateway        # Start specific service',
+      'phaseone compose ps                # List running services',
+      'phaseone compose logs gateway      # View gateway logs',
+      'phaseone compose down --confirm    # Stop all services ⚠️',
+    ],
+    tips: [
+      'Run after onboard to start the stack',
+      '`compose down` requires --confirm',
+      'Use `compose logs` to debug startup issues',
     ],
     dangerous: true,
     execute: async (args, opts) => {
@@ -575,11 +923,23 @@ export const commands: CommandDefinition[] = [
     name: 'rules',
     description: 'List or evaluate detection rules',
     usage: 'phaseone rules [list|evaluate] [options]',
+    category: 'defense-detection',
     options: [
       { flag: '--dir <path>', description: 'Rules directory', default: './rules' },
       { flag: '--json', description: 'Output as JSON' },
       { flag: '--event <json>', description: 'Event JSON for evaluate subcommand' },
       { flag: '--file <path>', description: 'Event JSON file for evaluate subcommand' },
+    ],
+    examples: [
+      'phaseone rules                           # List all rules',
+      'phaseone rules list --json               # JSON output',
+      'phaseone rules evaluate --event \'{"tool_name":"run_shell","decision":"deny"}\'',
+      'phaseone rules evaluate --file event.json',
+    ],
+    tips: [
+      'Rules are YAML files in the rules/ directory',
+      'Use evaluate to test rule matching against events',
+      'Severity levels: low, medium, high, critical',
     ],
     execute: async (args) => {
       let rulesDir = process.env.PHASEONE_RULES_DIR ?? join(ROOT, 'rules');
@@ -692,11 +1052,23 @@ export const commands: CommandDefinition[] = [
     name: 'metrics-sniff',
     description: 'Sniff and display live metrics summary (read-only)',
     usage: 'phaseone metrics-sniff [--gateway <url>] [--interval <ms>] [--count <n>]',
+    category: 'health-ops',
     options: [
       { flag: '--gateway <url>', description: 'Gateway URL', default: 'http://localhost:8080' },
       { flag: '--interval <ms>', description: 'Polling interval in ms', default: '5000' },
       { flag: '--count <n>', description: 'Number of samples (0 = continuous)', default: '1' },
       { flag: '--json', description: 'Output as JSON' },
+    ],
+    examples: [
+      'phaseone metrics-sniff                    # Single snapshot',
+      'phaseone metrics-sniff --count 5 --interval 3000',
+      'phaseone metrics-sniff --count 0          # Continuous polling',
+      'phaseone metrics-sniff --json             # For scripting',
+    ],
+    tips: [
+      'Shows key PhaseOne metrics in human-readable format',
+      'Use --count 0 for continuous monitoring',
+      'Lighter than full Prometheus scrape',
     ],
     execute: async (args) => {
       const env = getEnvWithDefaults();
@@ -803,8 +1175,18 @@ export const commands: CommandDefinition[] = [
     name: 'gui',
     description: 'Launch local GUI for CLI commands',
     usage: 'phaseone gui [--port <n>]',
+    category: 'getting-started',
     options: [
       { flag: '--port, -p <n>', description: 'GUI server port', default: '8888' },
+    ],
+    examples: [
+      'phaseone gui              # Start on http://localhost:8888',
+      'phaseone gui --port 9000  # Custom port',
+    ],
+    tips: [
+      'Opens browser-based CLI interface',
+      'All CLI commands available with forms',
+      'Destructive commands show confirmation dialog',
     ],
     execute: async (args, opts) => {
       let port = 8888;
@@ -839,6 +1221,7 @@ export const commands: CommandDefinition[] = [
     name: 'gatekeeper',
     description: 'Manage automated defense playbooks (status, run, dry-run, list-playbooks, llm-check)',
     usage: 'phaseone gatekeeper <status|run|dry-run|list-playbooks|confirm|deny|llm-check> [options]',
+    category: 'gatekeeper',
     options: [
       { flag: 'status', description: 'Show gatekeeper status and config' },
       { flag: 'run', description: 'Process queued events through playbooks' },
@@ -850,6 +1233,22 @@ export const commands: CommandDefinition[] = [
       { flag: '--dir <path>', description: 'Playbooks directory', default: './playbooks' },
       { flag: '--json', description: 'Output as JSON' },
       { flag: '--event <json>', description: 'Process a single event (JSON)' },
+    ],
+    examples: [
+      'phaseone gatekeeper status                   # View current state',
+      'phaseone gatekeeper list-playbooks           # See available playbooks',
+      'phaseone gatekeeper dry-run                  # Safe test run (DEFAULT)',
+      'phaseone gatekeeper run                      # Live processing',
+      'phaseone gatekeeper dry-run --event \'{"event_type":"canary_trigger","severity":"high"}\'',
+      'phaseone gatekeeper confirm abc-123          # Approve pending action',
+      'phaseone gatekeeper llm-check                # Check LLM advisor health',
+    ],
+    tips: [
+      '🛡️ DRY-RUN IS DEFAULT — no mutations without explicit run',
+      '🔒 HARDEN tier actions require human confirmation',
+      '🤖 LLM advisor is ADVISORY ONLY — playbooks decide mutations',
+      'Use llm-check to verify OpenRouter/Ollama connectivity',
+      'High-impact actions (rotate_canary, reload_rules) require confirm/deny',
     ],
     execute: async (args) => {
       let subcommand = 'status';

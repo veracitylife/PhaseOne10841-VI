@@ -11,57 +11,91 @@
  * DEFENSIVE ONLY — no exploit tooling.
  */
 
-import { BANNER, commands, executeCommand, VERSION, COMPANY, WEBSITE } from './registry.js';
+import { 
+  commands, 
+  executeCommand, 
+  findCommand,
+  VERSION, 
+  COMPANY, 
+  WEBSITE 
+} from './registry.js';
 
 const EXIT_SUCCESS = 0;
 const EXIT_ERROR = 1;
-const EXIT_USAGE = 2;
 
 function printVersion(): void {
   console.log(`PhaseOne10841 CLI v${VERSION}`);
   console.log(`${COMPANY} · ${WEBSITE}`);
 }
 
-function printUsage(): void {
-  console.log(BANNER);
-  console.log('');
-  console.log('Usage: phaseone <command> [options]');
-  console.log('');
-  console.log('Commands:');
-  const maxLen = Math.max(...commands.map((c) => c.name.length));
-  for (const cmd of commands) {
-    const warn = cmd.dangerous ? ' ⚠️' : '';
-    console.log(`  ${cmd.name.padEnd(maxLen + 2)} ${cmd.description}${warn}`);
-  }
-  console.log('');
-  console.log('Run `phaseone help <command>` for detailed usage.');
-  console.log('');
-  console.log(`${COMPANY} · ${WEBSITE}`);
+function suggestCommands(input: string): string {
+  const lowerInput = input.toLowerCase();
+  const matches = commands.filter(c => 
+    c.name.toLowerCase().includes(lowerInput) ||
+    c.description.toLowerCase().includes(lowerInput)
+  ).slice(0, 3);
+
+  if (matches.length === 0) return '';
+
+  return `\nDid you mean:\n${matches.map(m => `  • ${m.name} — ${m.description}`).join('\n')}`;
 }
 
 async function main(): Promise<number> {
   const args = process.argv.slice(2);
+  const isTTY = process.stdin.isTTY && !process.env.CI;
 
+  // No args: show grouped help (or interactive menu if TTY)
   if (args.length === 0) {
-    printUsage();
+    // If TTY and not in CI, default to menu-like experience
+    const result = await executeCommand('help', [], {});
+    console.log(result.output);
+    if (isTTY) {
+      console.log('\n💡 Tip: Run `phaseone menu` for interactive navigation.\n');
+    }
     return EXIT_SUCCESS;
   }
 
   const firstArg = args[0];
 
+  // Version flags
   if (firstArg === '--version' || firstArg === '-v') {
     printVersion();
     return EXIT_SUCCESS;
   }
 
-  if (firstArg === '--help' || firstArg === '-h') {
-    printUsage();
-    return EXIT_SUCCESS;
+  // Help flags — show grouped help
+  if (firstArg === '--help' || firstArg === '-h' || firstArg === 'help') {
+    const helpArgs = firstArg === 'help' ? args.slice(1) : [];
+    const result = await executeCommand('help', helpArgs, {});
+    console.log(result.output);
+    if (result.error) {
+      console.error(result.error);
+    }
+    return result.exitCode;
   }
 
   const commandName = firstArg;
   const commandArgs = args.slice(1);
 
+  // Check if command exists and provide friendly error
+  const cmd = findCommand(commandName);
+  if (!cmd) {
+    const suggestions = suggestCommands(commandName);
+    console.error(`❌ Unknown command: ${commandName}`);
+    console.error(suggestions);
+    console.error('\n📋 Run `phaseone help` to see all commands.');
+    console.error('📋 Run `phaseone menu` for interactive navigation.');
+    return EXIT_ERROR;
+  }
+
+  // Check for --help on specific command
+  if (commandArgs.includes('--help') || commandArgs.includes('-h')) {
+    const result = await executeCommand('help', [commandName], {});
+    console.log(result.output);
+    return result.exitCode;
+  }
+
+  // Execute the command
   const result = await executeCommand(commandName, commandArgs, {
     onOutput: (data) => process.stdout.write(data),
     onError: (data) => process.stderr.write(data),
@@ -74,7 +108,14 @@ async function main(): Promise<number> {
   }
 
   if (result.error) {
+    // Provide friendly error with examples if available
     console.error(result.error);
+    if (cmd.examples?.length && !result.ok) {
+      console.error('\n💡 Examples:');
+      for (const ex of cmd.examples.slice(0, 2)) {
+        console.error(`   ${ex}`);
+      }
+    }
   }
 
   return result.exitCode;

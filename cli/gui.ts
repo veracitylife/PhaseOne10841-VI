@@ -20,7 +20,10 @@ import {
   COMPANY, 
   WEBSITE,
   BANNER,
-  type CommandResult 
+  CATEGORY_INFO,
+  RECOMMENDED_FIRST_RUN,
+  type CommandResult,
+  type CommandCategory 
 } from './registry.js';
 
 const app = new Hono();
@@ -97,12 +100,82 @@ const HTML_PAGE = `<!DOCTYPE html>
       padding-bottom: 0.5rem;
       border-bottom: 1px solid var(--border);
     }
+    .guidance-panel {
+      background: rgba(59, 130, 246, 0.1);
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      padding: 0.75rem;
+      margin-bottom: 1rem;
+      font-size: 0.8rem;
+    }
+    .guidance-panel h3 {
+      font-size: 0.9rem;
+      margin-bottom: 0.5rem;
+      color: var(--accent);
+    }
+    .first-run-list {
+      margin: 0.5rem 0;
+      padding-left: 1.25rem;
+    }
+    .first-run-list li {
+      margin-bottom: 0.25rem;
+    }
+    .first-run-list code {
+      background: var(--surface-2);
+      padding: 0.1rem 0.3rem;
+      border-radius: 3px;
+      font-size: 0.75rem;
+    }
+    .guidance-note {
+      margin-top: 0.5rem;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+    }
+    .category-group {
+      margin-bottom: 1rem;
+    }
+    .category-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem;
+      background: var(--surface-2);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    .category-header:hover {
+      background: var(--border);
+    }
+    .category-header.expanded {
+      border-radius: 6px 6px 0 0;
+    }
+    .category-icon { font-size: 1rem; }
+    .category-count {
+      margin-left: auto;
+      font-size: 0.7rem;
+      background: var(--bg);
+      padding: 0.15rem 0.4rem;
+      border-radius: 10px;
+      color: var(--text-muted);
+    }
+    .category-commands {
+      display: none;
+      padding: 0.5rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-top: none;
+      border-radius: 0 0 6px 6px;
+    }
+    .category-commands.show { display: block; }
     .cmd-list { list-style: none; }
     .cmd-item {
-      padding: 0.75rem;
-      margin-bottom: 0.5rem;
+      padding: 0.5rem 0.75rem;
+      margin-bottom: 0.35rem;
       background: var(--surface-2);
-      border-radius: 8px;
+      border-radius: 6px;
       cursor: pointer;
       transition: all 0.2s;
       border: 1px solid transparent;
@@ -110,8 +183,43 @@ const HTML_PAGE = `<!DOCTYPE html>
     .cmd-item:hover { border-color: var(--accent); }
     .cmd-item.active { border-color: var(--accent); background: rgba(59, 130, 246, 0.1); }
     .cmd-item.dangerous { border-left: 3px solid var(--warning); }
-    .cmd-name { font-weight: 600; font-size: 0.9rem; }
-    .cmd-desc { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; }
+    .cmd-name { font-weight: 600; font-size: 0.85rem; }
+    .cmd-desc { font-size: 0.7rem; color: var(--text-muted); margin-top: 0.15rem; }
+    .category-badge {
+      display: inline-block;
+      padding: 0.25rem 0.5rem;
+      background: var(--surface-2);
+      border-radius: 4px;
+      font-size: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .examples, .tips {
+      background: var(--surface-2);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      margin-bottom: 1rem;
+      font-size: 0.85rem;
+    }
+    .examples h3, .tips h3 {
+      font-size: 0.85rem;
+      margin-bottom: 0.5rem;
+    }
+    .examples pre {
+      background: var(--bg);
+      padding: 0.75rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      white-space: pre-wrap;
+      margin: 0;
+    }
+    .tips ul {
+      margin: 0;
+      padding-left: 1.25rem;
+    }
+    .tips li {
+      margin-bottom: 0.25rem;
+      font-size: 0.8rem;
+    }
     .main {
       background: var(--surface);
       border-radius: 12px;
@@ -245,16 +353,35 @@ const HTML_PAGE = `<!DOCTYPE html>
 
     <div class="grid">
       <aside class="sidebar">
-        <h2>Commands</h2>
-        <ul class="cmd-list" id="cmdList"></ul>
+        <div class="guidance-panel" id="guidancePanel">
+          <h3>📋 How to Use</h3>
+          <div class="guidance-content">
+            <p><strong>Recommended First Run:</strong></p>
+            <ol class="first-run-list">
+              ${RECOMMENDED_FIRST_RUN.map(s => `<li><code>${s.cmd}</code> — ${s.desc}</li>`).join('')}
+            </ol>
+            <p class="guidance-note">Select a category below, then choose a command to run.</p>
+          </div>
+        </div>
+        <h2>Commands by Category</h2>
+        <div id="categoryList"></div>
       </aside>
 
       <main class="main">
         <div id="cmdDetail">
           <h2 id="cmdTitle">Select a command</h2>
           <div class="usage" id="cmdUsage"></div>
+          <div class="category-badge" id="cmdCategory" style="display:none;"></div>
+          <div class="examples" id="cmdExamples" style="display:none;">
+            <h3>💻 Examples</h3>
+            <pre id="examplesList"></pre>
+          </div>
+          <div class="tips" id="cmdTips" style="display:none;">
+            <h3>💡 Tips</h3>
+            <ul id="tipsList"></ul>
+          </div>
           <div class="options" id="cmdOptions" style="display:none;">
-            <h3>Options</h3>
+            <h3>⚙️ Options</h3>
             <div id="optionsForm"></div>
           </div>
           <div class="actions" id="cmdActions" style="display:none;">
@@ -293,26 +420,74 @@ const HTML_PAGE = `<!DOCTYPE html>
       name: c.name,
       description: c.description,
       usage: c.usage,
+      category: c.category,
       options: c.options,
+      examples: c.examples,
+      tips: c.tips,
       dangerous: c.dangerous,
       requiresConfirmation: c.requiresConfirmation,
     })))};
+
+    const categories = ${JSON.stringify(CATEGORY_INFO)};
+    const categoryOrder = ['getting-started', 'health-ops', 'defense-detection', 'gatekeeper', 'dangerous'];
 
     let currentCommand = null;
     let pendingConfirm = null;
 
     function renderCommands() {
-      const list = document.getElementById('cmdList');
-      list.innerHTML = commands.map(cmd => 
-        \`<li class="cmd-item \${cmd.dangerous ? 'dangerous' : ''}" data-cmd="\${cmd.name}">
-          <div class="cmd-name">\${cmd.name} \${cmd.dangerous ? '⚠️' : ''}</div>
-          <div class="cmd-desc">\${cmd.description}</div>
-        </li>\`
-      ).join('');
+      const container = document.getElementById('categoryList');
+      let html = '';
 
-      list.querySelectorAll('.cmd-item').forEach(item => {
+      for (const catKey of categoryOrder) {
+        const catInfo = categories[catKey];
+        const catCommands = commands.filter(c => 
+          c.category === catKey || (catKey === 'dangerous' && c.dangerous && c.category !== 'gatekeeper')
+        );
+        
+        if (catCommands.length === 0) continue;
+
+        html += \`
+          <div class="category-group" data-category="\${catKey}">
+            <div class="category-header" onclick="toggleCategory('\${catKey}')">
+              <span class="category-icon">\${catInfo.icon}</span>
+              <span>\${catInfo.label}</span>
+              <span class="category-count">\${catCommands.length}</span>
+            </div>
+            <div class="category-commands" id="cat-\${catKey}">
+              <ul class="cmd-list">
+                \${catCommands.map(cmd => \`
+                  <li class="cmd-item \${cmd.dangerous ? 'dangerous' : ''}" data-cmd="\${cmd.name}">
+                    <div class="cmd-name">\${cmd.name} \${cmd.dangerous ? '⚠️' : ''}</div>
+                    <div class="cmd-desc">\${cmd.description}</div>
+                  </li>
+                \`).join('')}
+              </ul>
+            </div>
+          </div>
+        \`;
+      }
+
+      container.innerHTML = html;
+
+      // Expand first category by default
+      toggleCategory('getting-started');
+
+      container.querySelectorAll('.cmd-item').forEach(item => {
         item.addEventListener('click', () => selectCommand(item.dataset.cmd));
       });
+    }
+
+    function toggleCategory(catKey) {
+      const catCommands = document.getElementById('cat-' + catKey);
+      const header = document.querySelector(\`[data-category="\${catKey}"] .category-header\`);
+      
+      if (catCommands.classList.contains('show')) {
+        catCommands.classList.remove('show');
+        header.classList.remove('expanded');
+      } else {
+        catCommands.classList.add('show');
+        header.classList.add('expanded');
+      }
     }
 
     function selectCommand(name) {
@@ -325,6 +500,36 @@ const HTML_PAGE = `<!DOCTYPE html>
       document.getElementById('cmdTitle').textContent = currentCommand.name + (currentCommand.dangerous ? ' ⚠️' : '');
       document.getElementById('cmdUsage').textContent = currentCommand.usage;
       document.getElementById('cmdActions').style.display = 'flex';
+
+      // Show category badge
+      const categoryBadge = document.getElementById('cmdCategory');
+      if (currentCommand.category && categories[currentCommand.category]) {
+        const catInfo = categories[currentCommand.category];
+        categoryBadge.innerHTML = \`\${catInfo.icon} \${catInfo.label}\`;
+        categoryBadge.style.display = 'inline-block';
+      } else {
+        categoryBadge.style.display = 'none';
+      }
+
+      // Show examples
+      const examplesDiv = document.getElementById('cmdExamples');
+      const examplesList = document.getElementById('examplesList');
+      if (currentCommand.examples?.length) {
+        examplesList.textContent = currentCommand.examples.join('\\n');
+        examplesDiv.style.display = 'block';
+      } else {
+        examplesDiv.style.display = 'none';
+      }
+
+      // Show tips
+      const tipsDiv = document.getElementById('cmdTips');
+      const tipsList = document.getElementById('tipsList');
+      if (currentCommand.tips?.length) {
+        tipsList.innerHTML = currentCommand.tips.map(t => \`<li>\${t}</li>\`).join('');
+        tipsDiv.style.display = 'block';
+      } else {
+        tipsDiv.style.display = 'none';
+      }
 
       const optionsDiv = document.getElementById('cmdOptions');
       const form = document.getElementById('optionsForm');
