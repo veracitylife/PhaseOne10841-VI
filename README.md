@@ -421,17 +421,34 @@ PhaseOne10841ME/
 
 ---
 
-## Roadmap (indicative)
+## Roadmap
 
-- Auto-remediation learning based on playbook effectiveness
-- LLM advisor enhancements (pattern recognition, playbook suggestions)
-- Optional signed canary packages for production deployments  
-- Multi-tenant org controls beyond email allowlists  
-- Official packaged SDKs (npm/PyPI LangChain/CrewAI adapters)  
-- SAML SSO in addition to OIDC  
-- Kubernetes Helm chart + operator  
+### Current: v0.7.0 (Phase 7 shipped)
 
-Roadmap items are aspirational and may change; contact Veracity Integrity LLC for commercial roadmap discussions.
+Gatekeeper worker, YAML playbooks, runtime overrides, human confirmation for harden-tier actions, LLM advisor.
+
+### Phase 8 — Approved backlog (Ryan 2026-09-17)
+
+Nine approved recommendations organized into implementation waves:
+
+**Wave A — Sales/demo leverage:**
+1. **Finish real IdP for OIDC/SSO** — Concrete IdP: callback, session, logout; enterprise auth demoable end-to-end
+2. **Gatekeeper blast-radius & simulation** — Pre-flight "what would this playbook do?"; rate caps/cooldowns
+3. **Packaged SDKs (npm + PyPI)** — Official clients for OpenAI/LangChain/CrewAI with headers, enforce helpers
+
+**Wave B — Defense depth:**
+4. **Playbook effectiveness / learn loop** — Track false positives, hit rates, suggested YAML tweaks (human-gated)
+5. **Full MCP wire proxy (selective)** — Thin wire proxy for trusted MCP servers with policy/approval/audit
+6. **Signed canary packages** — Signed rotatable production canaries with integrity checks and SIEM provenance
+
+**Wave C — Platform scale:**
+7. **Operator MCP (read-mostly)** — Management MCP for health, gatekeeper status, pending confirmations, metrics
+8. **Kubernetes Helm + operator path** — Helm/Kustomize: Postgres, gateway, dashboard, ingress, secrets, CronJobs
+9. **Multi-tenant org controls** — Orgs, agent fleets, per-tenant policy/playbooks, scoped audit
+
+See [docs/PHASE8_PLAN.md](docs/PHASE8_PLAN.md) for detailed implementation plan and sequencing.
+
+Roadmap items are approved for implementation; contact Veracity Integrity LLC for commercial discussions.
 
 ---
 
