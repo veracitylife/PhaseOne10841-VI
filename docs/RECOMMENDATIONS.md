@@ -1,161 +1,326 @@
-# PhaseOne10841 — Approved recommendations (1–9)
+# PhaseOne10841 — Phase 8 Approved Recommendations (1–9)
 
 **Veracity Integrity LLC** · https://VeracityIntegrity.com  
-Product: PhaseOne10841ME · **v0.7.0**  
-All nine items below are **Approved**. Status reflects this tree after the implementation pass.
+Product: PhaseOne10841ME · **v0.7.0** (shipped) → **Phase 8 planned**  
+All nine items below are **Approved** by Ryan (2026-09-17). Implementation planned.
 
 ---
 
-## 1. Onboard / session secret
+> **Archive note:** Phase 1–7 ops recommendations 1–9 are **complete** and shipped in v0.7.0.
+> See git history for the prior checklist. This document now tracks Phase 8 approved backlog.
+
+---
+
+## 1. Finish real IdP for OIDC/SSO
 
 | | |
 |--|--|
 | **Approved** | Yes |
-| **Status** | **Done** |
+| **Status** | **Planned** |
 
-Ensure onboard docs + defaults never leave a `change-me` session secret; warn at startup if weak.
+**Goal:** Concrete IdP implementation with callback, session management, and logout — enterprise auth demoable end-to-end beside email OTP.
 
-- `npm run onboard` / `--defaults` always writes a 64-char hex `PHASEONE_SESSION_SECRET` (never `change-me`); weak env placeholders are discarded and regenerated.
-- `.env.example` keeps an explicit placeholder so operators know to run onboard.
-- Dashboard startup: `warnIfWeakSessionSecret()` in `shared/src/session-secret.ts` (flags `change-me`, `dev-only`, short/empty).
-- Compose lab default `dev-only-change-me` still boots but triggers the loud warn until onboard is run.
+### Acceptance criteria
+- Full OIDC callback flow with state/nonce validation
+- Session binding (IdP session ↔ PhaseOne session)
+- Logout endpoint with IdP session termination
+- Works alongside email OTP (never weakens MFA)
+- Demo-ready with at least one real IdP (Okta, Azure AD, or Auth0)
+- Documentation for operator IdP configuration
+
+### Suggested approach
+1. Extend `shared/src/oidc.ts` with full callback handler
+2. Add `/auth/oidc/callback` and `/auth/oidc/logout` routes
+3. Store IdP tokens securely (encrypted at rest if persisted)
+4. Add dashboard IdP connection status / test button
+5. Create `docs/oidc-setup.md` with IdP configuration guides
+
+### Risks / safety notes (DEFENSIVE ONLY)
+- Token storage must use secure defaults (httpOnly, Secure cookies)
+- State parameter must be cryptographically random to prevent CSRF
+- Never log tokens or IdP secrets
+- Graceful fallback to email OTP if IdP unavailable
 
 ---
 
-## 2. Mock-first upstream
+## 2. Playbook effectiveness / learn loop
 
 | | |
 |--|--|
 | **Approved** | Yes |
-| **Status** | **Done** |
+| **Status** | **Planned** |
 
-Keep `UPSTREAM_PROVIDER=mock` until health is green; clear path to switch afterward.
+**Goal:** Track false positives, hit rates, and suggested YAML tweaks from confirm/deny actions — still human-gated.
 
-- Defaults: `.env.example`, onboard, `docker-compose.yml`.
-- Compose header + README §2b + `docs/operations.md`: after `/healthz` + `/readyz`,  
-  env override **or** overlay `docker-compose.upstream-ollama.yml`.
+### Acceptance criteria
+- Record playbook trigger outcomes (confirmed, denied, auto-resolved)
+- Dashboard view of playbook effectiveness metrics
+- False positive rate per rule/playbook
+- Suggested threshold/condition tweaks based on patterns
+- All suggestions require human review before applying
+- Export effectiveness data for offline analysis
+
+### Suggested approach
+1. Add `playbook_outcomes` table (playbook_id, outcome, timestamp, admin_notes)
+2. Extend gatekeeper worker to record outcomes on confirm/deny
+3. Add `/v1/phaseone/gatekeeper/effectiveness` API
+4. Dashboard "Learn" tab with effectiveness charts
+5. Simple heuristic: if deny rate > 50% over 7 days, suggest threshold increase
+
+### Risks / safety notes (DEFENSIVE ONLY)
+- Never auto-apply suggestions — human confirmation required
+- Retain outcome history for audit (subject to retention policy)
+- Rate limit suggestion generation to prevent alert fatigue
 
 ---
 
-## 3. Dependabot (+ secret scanning note)
+## 3. Full MCP wire proxy (selective)
 
 | | |
 |--|--|
 | **Approved** | Yes |
-| **Status** | **Done** (in-repo) · **Partial** (GitHub UI toggle) |
+| **Status** | **Planned** |
 
-Solid Dependabot for npm + Docker; note secret scanning for the private repo.
+**Goal:** Thin wire proxy for trusted MCP servers with same policy/approval/audit as tools.
 
-- `.github/dependabot.yml` — weekly **npm** (grouped), **docker**, **github-actions**.
-- **Operator (GitHub Settings → Code security):** enable **Secret scanning** and **Push protection**. Dependabot does not replace secret scanning.
+### Acceptance criteria
+- Proxy MCP JSON-RPC calls through gateway
+- Apply tool policy to MCP tool invocations
+- Audit all MCP calls with full request/response
+- Selective: only proxied MCP servers (allowlist)
+- Approval flow for destructive MCP tools
+- Injection scanning on MCP results
+
+### Suggested approach
+1. Add `/v1/mcp/proxy` endpoint accepting JSON-RPC
+2. Parse MCP tool calls, map to policy rules
+3. Reuse existing tool enforce logic for MCP tools
+4. Add `mcp_servers` allowlist in policy YAML
+5. Record MCP calls in event store with `event_type: mcp_proxy`
+
+### Risks / safety notes (DEFENSIVE ONLY)
+- Only proxy to explicitly allowlisted MCP servers
+- Never auto-trust MCP server responses
+- Timeout MCP calls to prevent hanging
+- Sanitize MCP responses before returning to agent
 
 ---
 
-## 4. SMTP MFA production path
+## 4. Operator MCP (read-mostly)
 
 | | |
 |--|--|
 | **Approved** | Yes |
-| **Status** | **Done** |
+| **Status** | **Planned** |
 
-Document `noreply@clovisstar.com` as the Veracity/Clovis Star SMTP sender; clear OTP template; lab-only console fallback with loud warning.
+**Goal:** Management MCP for trusted operator agents: health, gatekeeper status, pending confirmations, metrics; mutations only with MFA/RBAC + human confirm.
 
-- Default / docs: `SMTP_FROM=noreply@clovisstar.com` (`.env.example`, compose, onboard, `loadAuthConfig`).
-- OTP email body identifies PhaseOne + Veracity + Clovis Star sender path.
-- No `SMTP_HOST`: console/file fallback + **LAB-ONLY** warnings (auth + dashboard startup). Not for shared/production.
+### Acceptance criteria
+- MCP server exposing PhaseOne management tools
+- Read tools: health, gatekeeper status, pending confirmations, metrics, recent events
+- Write tools: confirm/deny actions, runtime overrides
+- Write tools require MFA-authenticated session + RBAC check
+- Write tools require explicit human confirmation dialog
+- Full audit trail for all MCP management calls
+
+### Suggested approach
+1. Create `mcp-server/` with JSON-RPC handler
+2. Implement read tools: `phaseone_health`, `phaseone_gatekeeper_status`, `phaseone_pending`, `phaseone_metrics`
+3. Implement write tools: `phaseone_confirm`, `phaseone_deny`, `phaseone_override`
+4. Bind MCP server to localhost only by default
+5. Require `X-PhaseOne-Admin-Token` header for write operations
+
+### Risks / safety notes (DEFENSIVE ONLY)
+- Default to localhost binding (no external exposure)
+- Write operations must verify MFA session is active
+- Rate limit MCP management calls
+- Log all management MCP calls to audit
 
 ---
 
-## 5. Reverse proxy + TLS
+## 5. Kubernetes Helm + operator path
 
 | | |
 |--|--|
 | **Approved** | Yes |
-| **Status** | **Done** |
+| **Status** | **Planned** |
 
-Complete Caddy overlay + short proxy doc.
+**Goal:** Helm/Kustomize deployment: Postgres, gateway, dashboard, ingress, secrets, retention CronJobs.
 
-- `docker-compose.proxy.yml` + `deploy/caddy/Caddyfile` (`phaseone.localhost`, `gateway.phaseone.localhost`, `tls internal`).
-- **`docs/proxy.md`** — bring-up, verify curls, ACME notes, `PHASEONE_SECURE_COOKIES=true`.
+### Acceptance criteria
+- Helm chart in `deploy/helm/phaseone/`
+- Configurable values for all env vars
+- Kubernetes Secrets for sensitive values
+- Ingress with TLS termination
+- CronJob for retention cleanup
+- CronJob for backups (optional PVC)
+- Health/readiness probes configured
+- Resource limits documented
 
-```bash
-docker compose -f docker-compose.yml -f docker-compose.proxy.yml up -d
-```
+### Suggested approach
+1. Create Helm chart structure with templates for Deployment, Service, Ingress, ConfigMap, Secret, CronJob
+2. Add `values.yaml` with sensible defaults
+3. Kustomize overlays for dev/staging/prod
+4. Document in `docs/kubernetes.md`
+5. Test with minikube/kind in CI
+
+### Risks / safety notes (DEFENSIVE ONLY)
+- Secrets must use Kubernetes Secrets (not ConfigMaps)
+- Default to ClusterIP services (no external exposure without Ingress)
+- Resource limits prevent noisy-neighbor issues
+- PodSecurityPolicy / SecurityContext for non-root
 
 ---
 
-## 6. Viewer RBAC
+## 6. Multi-tenant org controls
 
 | | |
 |--|--|
 | **Approved** | Yes |
-| **Status** | **Done** |
+| **Status** | **Planned** |
 
-`PHASEONE_VIEWER_EMAILS` works; documented; tests cover read-only.
+**Goal:** Orgs, agent fleets, per-tenant policy/playbooks, scoped audit beyond email allowlists.
 
-- `shared/src/rbac.ts` + dashboard `requireMutatingAuth` — viewers MFA-login but cannot mutate.
-- Documented in README, onboard, this checklist.
-- Tests: `tests/auth-otp.test.ts`, `tests/phase4.test.ts` (incl. multi-viewer allowlist).
+### Acceptance criteria
+- Org entity with unique identifier
+- Agents belong to orgs
+- Per-org policy YAML
+- Per-org playbooks directory
+- Scoped audit queries (org filter)
+- Org admin vs global admin roles
+- Org-scoped API keys
+
+### Suggested approach
+1. Add `orgs` table (id, name, created_at, settings_json)
+2. Add `org_id` foreign key to agents, events, sessions
+3. Policy loader checks org-specific path first, falls back to global
+4. Extend RBAC: `org_admin` role scoped to org
+5. API: `/v1/orgs/:orgId/...` namespaced endpoints
+
+### Risks / safety notes (DEFENSIVE ONLY)
+- Strict tenant isolation — org A cannot see org B data
+- Global admin can see all orgs (for platform ops)
+- Org deletion must be soft-delete with retention
+- Validate org_id on every scoped request
 
 ---
 
-## 7. Retention + backup schedule
+## 7. Signed canary packages
 
 | | |
 |--|--|
 | **Approved** | Yes |
-| **Status** | **Done** |
+| **Status** | **Planned** |
 
-Windows scheduled tasks + backup/restore scripts correct and documented.
+**Goal:** Signed rotatable production canaries with integrity checks and SIEM provenance.
 
-- `scripts/backup.sh` / `scripts/restore.sh` / `npm run retention`.
-- `scripts/windows/Register-PhaseOneScheduledTasks.ps1` — daily 2am Backup + Retention.
-- Documented here and in `docs/operations.md`.
+### Acceptance criteria
+- Canary packages signed with Ed25519 or similar
+- Signature verification on canary load
+- Rotation preserves signature chain (old sig + new sig)
+- SIEM export includes canary signature metadata
+- CLI command to verify canary integrity
+- Tamper detection alert if signature invalid
 
-```powershell
-.\scripts\windows\Register-PhaseOneScheduledTasks.ps1
-```
+### Suggested approach
+1. Generate Ed25519 keypair during onboard (private key encrypted at rest)
+2. Sign canary JSON with `canary.signature` field
+3. Add `npm run phaseone -- canary verify` command
+4. On canary rotate, sign new canary, archive old signature
+5. SIEM export includes `canary_signature` for provenance
+
+### Risks / safety notes (DEFENSIVE ONLY)
+- Private signing key must be protected (file permissions, encryption)
+- Key rotation procedure documented
+- Signature verification must not block startup (warn only on first run)
+- Never expose private key in logs or API
 
 ---
 
-## 8. Detection rules tuning
+## 8. Packaged SDKs (npm + PyPI)
 
 | | |
 |--|--|
 | **Approved** | Yes |
-| **Status** | **Done** |
+| **Status** | **Planned** |
 
-Coherent `docs/rules-tuning.md` + sample rules; linked from README.
+**Goal:** Official clients for OpenAI/LangChain/CrewAI with headers, enforce helpers, versioned docs.
 
-- `docs/rules-tuning.md` aligned with `rules/*.yaml`.
-- `shell-denied.yaml` matches real tool ids (`run_shell`, `shell_exec`, `unrestricted_shell`, …).
-- README Operator checklist links RECOMMENDATIONS + rules-tuning + proxy.
+### Acceptance criteria
+- `@phaseone/client` npm package
+- `phaseone-client` PyPI package
+- Automatic `X-PhaseOne-*` header injection
+- `enforce()` wrapper for tool calls
+- TypeScript types / Python type hints
+- Versioned documentation matching package version
+- CI publish to npm/PyPI on release
+
+### Suggested approach
+1. Create `packages/sdk-js/` with TypeScript client
+2. Create `packages/sdk-python/` with Python client
+3. Wrap OpenAI client with header injection
+4. Add `enforce(tool, args)` that calls `/v1/phaseone/tools/enforce`
+5. Publish workflow: tag → build → publish
+
+### Risks / safety notes (DEFENSIVE ONLY)
+- SDK must not embed secrets (use env vars)
+- SDK must validate gateway URL (no open redirect)
+- Version must match gateway compatibility
+- Clear deprecation policy for breaking changes
 
 ---
 
-## 9. Admin allowlist + MFA email
+## 9. Gatekeeper blast-radius & simulation
 
 | | |
 |--|--|
 | **Approved** | Yes |
-| **Status** | **Done** |
+| **Status** | **Planned** |
 
-Operators must set `PHASEONE_ADMIN_EMAILS` to real addresses; onboard prompts clearly.
+**Goal:** Pre-flight "what would this playbook do?" over a time window; rate caps/cooldowns so contain/harden cannot thrash a fleet.
 
-- Interactive onboard prompts for real admin emails (example: `techpronow@gmail.com`) and warns on `admin@localhost`.
-- `.env.example` + this checklist state the same.
-- Production MFA delivery requires SMTP (item 4); lab fallback will not reach Gmail.
+### Acceptance criteria
+- Simulation API: given playbook + time window, return projected actions
+- Historical replay: "if this playbook existed last 24h, what would it have done?"
+- Blast-radius estimate: count of agents/sessions affected
+- Rate caps: max N contain actions per hour per agent
+- Cooldowns: after harden action, wait M minutes before next
+- Dashboard simulation UI with dry-run visualization
+
+### Suggested approach
+1. Add `/v1/phaseone/gatekeeper/simulate` endpoint
+2. Query historical events matching playbook conditions
+3. Return `{ projected_actions: [...], blast_radius: { agents: N, sessions: M } }`
+4. Add `rate_caps` and `cooldowns` to gatekeeper config
+5. Dashboard "Simulate" button on playbook detail
+
+### Risks / safety notes (DEFENSIVE ONLY)
+- Simulation must be read-only (no side effects)
+- Rate caps prevent runaway automation
+- Cooldowns prevent flip-flopping between contain/release
+- Alert if simulation shows high blast radius
 
 ---
 
-## Suggested bring-up order
+## Suggested implementation order
 
-1. `npm install && npm run onboard` — real admin email(s), generated session secret, mock upstream  
-2. Confirm `.env`: no `change-me` secret, real `PHASEONE_ADMIN_EMAILS`, optional viewers  
-3. `docker compose up --build -d`  
-4. `curl http://localhost:8080/healthz` && `curl http://localhost:8080/readyz`  
-5. `npm run smoke`  
-6. Open `http://localhost:3000` → MFA (OTP fallback file only if SMTP unset — lab)  
-7. Then: real upstream + SMTP (`noreply@clovisstar.com`) + Caddy (`docs/proxy.md`) + scheduled tasks + rules tuning  
+See [PHASE8_PLAN.md](PHASE8_PLAN.md) for detailed waves and sequencing.
 
-DEFENSIVE ONLY — no exploit tooling.
+**Wave A (sales/demo leverage):**
+1. #1 Finish real IdP for OIDC/SSO
+2. #9 Gatekeeper blast-radius & simulation
+3. #8 Packaged SDKs (npm + PyPI)
+
+**Wave B (defense depth):**
+4. #2 Playbook effectiveness / learn loop
+5. #3 Full MCP wire proxy (selective)
+6. #7 Signed canary packages
+
+**Wave C (platform scale):**
+7. #4 Operator MCP (read-mostly)
+8. #5 Kubernetes Helm + operator path
+9. #6 Multi-tenant org controls
+
+---
+
+DEFENSIVE ONLY — no exploit tooling, no secrets, no attack payloads.
