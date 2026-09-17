@@ -837,8 +837,8 @@ export const commands: CommandDefinition[] = [
 
   {
     name: 'gatekeeper',
-    description: 'Manage automated defense playbooks (status, run, dry-run, list-playbooks)',
-    usage: 'phaseone gatekeeper <status|run|dry-run|list-playbooks|confirm|deny> [options]',
+    description: 'Manage automated defense playbooks (status, run, dry-run, list-playbooks, llm-check)',
+    usage: 'phaseone gatekeeper <status|run|dry-run|list-playbooks|confirm|deny|llm-check> [options]',
     options: [
       { flag: 'status', description: 'Show gatekeeper status and config' },
       { flag: 'run', description: 'Process queued events through playbooks' },
@@ -846,6 +846,7 @@ export const commands: CommandDefinition[] = [
       { flag: 'list-playbooks', description: 'List available playbooks' },
       { flag: 'confirm <id>', description: 'Confirm a pending action' },
       { flag: 'deny <id>', description: 'Deny a pending action' },
+      { flag: 'llm-check', description: 'Check LLM advisor configuration and health' },
       { flag: '--dir <path>', description: 'Playbooks directory', default: './playbooks' },
       { flag: '--json', description: 'Output as JSON' },
       { flag: '--event <json>', description: 'Process a single event (JSON)' },
@@ -858,7 +859,7 @@ export const commands: CommandDefinition[] = [
       let confirmationId = '';
 
       for (let i = 0; i < args.length; i++) {
-        if (['status', 'run', 'dry-run', 'list-playbooks', 'confirm', 'deny'].includes(args[i])) {
+        if (['status', 'run', 'dry-run', 'list-playbooks', 'confirm', 'deny', 'llm-check'].includes(args[i])) {
           subcommand = args[i];
           if ((subcommand === 'confirm' || subcommand === 'deny') && args[i + 1]) {
             confirmationId = args[++i];
@@ -1043,7 +1044,57 @@ export const commands: CommandDefinition[] = [
           return { ok: false, exitCode: 1, output: '', error: result.error ?? 'Failed to deny' };
         }
 
-        return { ok: false, exitCode: 1, output: '', error: 'Unknown subcommand. Use: status, run, dry-run, list-playbooks, confirm, deny' };
+        if (subcommand === 'llm-check') {
+          const { getAdvisorConfig, getAdvisorHealth } = await import('../gatekeeper/src/worker.js');
+          const config = getAdvisorConfig();
+
+          const lines = [
+            `${PRODUCT_NAME} Gatekeeper LLM Advisor Check`,
+            '',
+            'Configuration:',
+            `  Enabled: ${config.enabled ? '✓ Yes' : '✗ No'}`,
+            `  Primary: ${config.primary}`,
+            `  Fallback: ${config.fallback}`,
+            '',
+            'OpenRouter:',
+            `  Configured: ${(config.openrouter as { configured?: boolean })?.configured ? '✓ Yes (API key set)' : '✗ No (OPENROUTER_API_KEY not set)'}`,
+            `  Base URL: ${(config.openrouter as { base_url?: string })?.base_url}`,
+            `  Model: ${(config.openrouter as { model?: string })?.model}`,
+            '',
+            'Ollama:',
+            `  Base URL: ${(config.ollama as { base_url?: string })?.base_url}`,
+            `  Model: ${(config.ollama as { model?: string })?.model}`,
+            '',
+          ];
+
+          let health: Awaited<ReturnType<typeof getAdvisorHealth>> | null = null;
+          if ((config.openrouter as { configured?: boolean })?.configured || (config.ollama as { base_url?: string })?.base_url) {
+            lines.push('Running health checks...');
+            try {
+              health = await getAdvisorHealth();
+              lines.push('');
+              lines.push('Health Check Results:');
+              lines.push(`  OpenRouter: ${health.openrouter.ok ? `✓ OK (${health.openrouter.latency_ms}ms)` : `✗ Failed: ${health.openrouter.error}`}`);
+              lines.push(`  Ollama: ${health.ollama.ok ? `✓ OK (${health.ollama.latency_ms}ms)` : `✗ Failed: ${health.ollama.error}`}`);
+              lines.push(`  Recommended: ${health.recommended_provider || '(none available)'}`);
+            } catch (err) {
+              const errMsg = err instanceof Error ? err.message : String(err);
+              lines.push(`  Error: ${errMsg}`);
+            }
+          } else {
+            lines.push('⚠ No providers configured. Set OPENROUTER_API_KEY or configure Ollama.');
+          }
+
+          lines.push('', `${COMPANY}`);
+
+          if (json) {
+            return { ok: true, exitCode: 0, output: JSON.stringify({ config, health }, null, 2), data: { config, health } };
+          }
+
+          return { ok: true, exitCode: 0, output: lines.join('\n'), data: { config, health } };
+        }
+
+        return { ok: false, exitCode: 1, output: '', error: 'Unknown subcommand. Use: status, run, dry-run, list-playbooks, confirm, deny, llm-check' };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         return { ok: false, exitCode: 1, output: '', error: `Gatekeeper error: ${msg}` };

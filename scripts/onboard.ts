@@ -63,6 +63,12 @@ export interface OnboardAnswers {
   gatekeeperEnabled: string;
   gatekeeperDryRun: string;
   playbooksDir: string;
+  gatekeeperLlmPrimary: string;
+  gatekeeperLlmFallback: string;
+  gatekeeperOpenrouterModel: string;
+  gatekeeperOpenrouterBaseUrl: string;
+  gatekeeperOllamaBaseUrl: string;
+  gatekeeperOllamaModel: string;
 }
 
 export function generateSessionSecret(): string {
@@ -113,6 +119,12 @@ export function defaultAnswers(overrides: Partial<OnboardAnswers> = {}): Onboard
     gatekeeperEnabled: process.env.PHASEONE_GATEKEEPER_ENABLED ?? 'false',
     gatekeeperDryRun: process.env.PHASEONE_GATEKEEPER_DRY_RUN ?? 'true',
     playbooksDir: process.env.PHASEONE_PLAYBOOKS_DIR ?? './playbooks',
+    gatekeeperLlmPrimary: process.env.PHASEONE_GATEKEEPER_LLM_PRIMARY ?? 'openrouter',
+    gatekeeperLlmFallback: process.env.PHASEONE_GATEKEEPER_LLM_FALLBACK ?? 'ollama',
+    gatekeeperOpenrouterModel: process.env.PHASEONE_GATEKEEPER_OPENROUTER_MODEL ?? 'openrouter/auto',
+    gatekeeperOpenrouterBaseUrl: process.env.PHASEONE_GATEKEEPER_OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1',
+    gatekeeperOllamaBaseUrl: process.env.PHASEONE_GATEKEEPER_OLLAMA_BASE_URL ?? 'http://100.124.238.112:11434/v1',
+    gatekeeperOllamaModel: process.env.PHASEONE_GATEKEEPER_OLLAMA_MODEL ?? 'unrestricted:latest',
     ...overrides,
   };
 }
@@ -201,6 +213,17 @@ export function renderEnv(a: OnboardAnswers): string {
     '# PHASEONE_GATEKEEPER_WEBHOOK_URL=',
     '# PHASEONE_GATEKEEPER_POLL_MS=5000',
     '# PHASEONE_GATEKEEPER_EVENT_WINDOW_MS=60000',
+    '',
+    '# --- Phase 7 LLM Advisor (optional, advisory only) ---',
+    '# Primary: OpenRouter; Fallback: Ollama. LLM advises, playbooks decide.',
+    `# PHASEONE_GATEKEEPER_LLM_PRIMARY=${a.gatekeeperLlmPrimary}`,
+    `# PHASEONE_GATEKEEPER_LLM_FALLBACK=${a.gatekeeperLlmFallback}`,
+    `# PHASEONE_GATEKEEPER_OPENROUTER_MODEL=${a.gatekeeperOpenrouterModel}`,
+    `# PHASEONE_GATEKEEPER_OPENROUTER_BASE_URL=${a.gatekeeperOpenrouterBaseUrl}`,
+    `# PHASEONE_GATEKEEPER_OLLAMA_BASE_URL=${a.gatekeeperOllamaBaseUrl}`,
+    `# PHASEONE_GATEKEEPER_OLLAMA_MODEL=${a.gatekeeperOllamaModel}`,
+    '# PHASEONE_GATEKEEPER_LLM_TIMEOUT_MS=30000',
+    '# PHASEONE_GATEKEEPER_LLM_MAX_TOKENS=512',
     '',
     '# Optional policy override',
     '# PHASEONE_POLICY_PATH=./policy/default-policy.yaml',

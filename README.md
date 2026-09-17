@@ -154,10 +154,11 @@ flowchart LR
 | **YAML playbooks** | Playbook-based responses in `playbooks/*.yaml` with tiers (observe, contain, harden) |
 | **Playbook tiers** | observe (alert/audit), contain (rate limit, force approval, lower trust), harden (rotate canary, reload rules) |
 | **Human confirmation** | Harden-tier actions require explicit admin confirmation (MFA/RBAC) |
-| **CLI commands** | `gatekeeper status`, `gatekeeper run`, `gatekeeper dry-run`, `gatekeeper list-playbooks` |
+| **CLI commands** | `gatekeeper status`, `run`, `dry-run`, `list-playbooks`, `llm-check`, `confirm`, `deny` |
 | **Dashboard strip** | Gatekeeper status, pending confirmations, recent actions, runtime overrides |
 | **Runtime overrides** | Temporary policy mutations (deny tool/domain, tighten rate limit) with expiration |
 | **Dry-run mode** | Safe by default — observe without mutations until ready to activate |
+| **LLM advisor** | Optional advisory suggestions via OpenRouter (primary) + Ollama (fallback); LLM advises, playbooks decide |
 | **Audit integration** | All auto-actions logged with actor `gatekeeper`; dashboard notifications |
 | **Gatekeeper docs** | [`docs/gatekeeper.md`](docs/gatekeeper.md) — comprehensive playbook schema and usage |
 
@@ -411,9 +412,9 @@ PhaseOne10841ME/
 | Aggregation/time-window rules | **Works** (Phase 6) — count, distinct_count, sum, avg with windows |
 | OIDC / SSO enterprise auth | **Works** (Phase 6) — optional alongside email OTP, never weakens MFA |
 | Gatekeeper playbooks + worker | **Works** (Phase 7) — Sense/Decide/Act/Learn with YAML playbooks |
-| Gatekeeper CLI + dashboard strip | **Works** (Phase 7) — status, run, dry-run, list-playbooks, confirm/deny |
+| Gatekeeper CLI + dashboard strip | **Works** (Phase 7) — status, run, dry-run, list-playbooks, llm-check, confirm/deny |
 | Runtime overrides (temporary policy) | **Works** (Phase 7) — deny tool/domain, rate limit with expiration |
-| LLM advisor for gatekeeper | **Stubbed** — Roadmap: advisory-only suggestions |
+| LLM advisor for gatekeeper | **Works** (Phase 7) — OpenRouter primary + Ollama fallback; advisory only |
 | In-process OS syscall interception | **Stubbed** — use `/v1/phaseone/tools/enforce` |
 | Full MCP wire proxy | **Stubbed** — `mcp_call` enforce + lab fake-mcp |
 | Attack simulator / offensive labs | **Out of scope** |
@@ -422,8 +423,8 @@ PhaseOne10841ME/
 
 ## Roadmap (indicative)
 
-- LLM advisor for gatekeeper (advisory-only, summarize/suggest)
 - Auto-remediation learning based on playbook effectiveness
+- LLM advisor enhancements (pattern recognition, playbook suggestions)
 - Optional signed canary packages for production deployments  
 - Multi-tenant org controls beyond email allowlists  
 - Official packaged SDKs (npm/PyPI LangChain/CrewAI adapters)  

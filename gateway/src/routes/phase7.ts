@@ -17,6 +17,8 @@ import {
   queueEvent,
   convertRuleHitToEvent,
   loadGatekeeperConfig,
+  getAdvisorConfig,
+  getAdvisorHealth,
 } from '../../../gatekeeper/src/worker.js';
 import {
   loadPlaybooks,
@@ -303,6 +305,24 @@ export function registerPhase7Routes(app: Hono, _cfg: GatewayConfig): void {
       rule_hits: ruleHits,
       executions,
       dry_run: body.dry_run ?? getGatekeeperStatus().state.dry_run,
+    });
+  });
+
+  app.get('/v1/phaseone/gatekeeper/llm/config', (c) => {
+    const config = getAdvisorConfig();
+    return c.json({
+      ...config,
+      product: 'PhaseOne10841',
+      vendor: 'Veracity Integrity LLC',
+    });
+  });
+
+  app.get('/v1/phaseone/gatekeeper/llm/health', async (c) => {
+    const health = await getAdvisorHealth();
+    return c.json({
+      ...health,
+      product: 'PhaseOne10841',
+      vendor: 'Veracity Integrity LLC',
     });
   });
 }

@@ -24,6 +24,13 @@ import {
   __testResetActions,
 } from './actions.js';
 import { recordAudit } from '../../shared/src/audit.js';
+import {
+  completeAdvisorPrompt,
+  loadGatekeeperLLMConfig,
+  describeConfig as describeLLMConfig,
+  checkLLMHealth,
+  type AdvisorResponse,
+} from '../../shared/src/gatekeeper-llm.js';
 
 const MAX_RECENT_ACTIONS = 100;
 
@@ -36,6 +43,7 @@ interface WorkerState {
   pendingConfirmations: PendingConfirmation[];
   eventQueue: GatekeeperEvent[];
   isRunning: boolean;
+  advisorEnabled: boolean;
 }
 
 const state: WorkerState = {
@@ -47,7 +55,17 @@ const state: WorkerState = {
   pendingConfirmations: [],
   eventQueue: [],
   isRunning: false,
+  advisorEnabled: false,
 };
+
+export function setAdvisorEnabled(enabled: boolean): void {
+  state.advisorEnabled = enabled;
+}
+
+export function isAdvisorEnabled(): boolean {
+  const llmConfig = loadGatekeeperLLMConfig();
+  return state.advisorEnabled || llmConfig.enabled;
+}
 
 export function loadGatekeeperConfig(): GatekeeperConfig {
   return {
@@ -90,7 +108,7 @@ export function queueEvent(event: GatekeeperEvent): void {
 
 export async function processEvent(
   event: GatekeeperEvent,
-  opts?: { dryRunOverride?: boolean; playbooksDir?: string }
+  opts?: { dryRunOverride?: boolean; playbooksDir?: string; skipAdvisor?: boolean }
 ): Promise<PlaybookExecution[]> {
   const cfg = loadGatekeeperConfig();
   const dryRun = opts?.dryRunOverride ?? state.dryRun;
@@ -98,9 +116,17 @@ export async function processEvent(
   
   const matches = matchAllPlaybooks(playbooks, event);
   const executions: PlaybookExecution[] = [];
+
+  let advisorSuggestion: AdvisorResponse | null = null;
+  if (!opts?.skipAdvisor && matches.length > 0) {
+    advisorSuggestion = await getAdvisorSuggestion(
+      event,
+      matches.map(m => m.playbook.id)
+    );
+  }
   
   for (const { playbook, eventsInWindow } of matches) {
-    const execution = await executePlaybook(playbook, event, dryRun);
+    const execution = await executePlaybook(playbook, event, dryRun, advisorSuggestion);
     execution.trigger_event.metadata = {
       ...execution.trigger_event.metadata,
       events_in_window: eventsInWindow,
@@ -120,10 +146,43 @@ export async function processEvent(
   return executions;
 }
 
+async function getAdvisorSuggestion(
+  event: GatekeeperEvent,
+  matchedPlaybooks: string[]
+): Promise<AdvisorResponse | null> {
+  if (!isAdvisorEnabled()) {
+    return null;
+  }
+
+  try {
+    const response = await completeAdvisorPrompt({
+      context: JSON.stringify({
+        severity: event.severity,
+        agent_id: event.agent_id,
+        session_id: event.session_id,
+        decision: event.decision,
+      }),
+      event_summary: `Event: ${event.event_type}${event.rule_id ? ` (rule: ${event.rule_id})` : ''}`,
+      playbook_matches: matchedPlaybooks,
+      question: 'Provide a brief defensive recommendation for this security event.',
+    });
+
+    if (response.ok) {
+      console.log(`[PhaseOne Gatekeeper] LLM advisor responded via ${response.provider}`);
+    }
+
+    return response;
+  } catch (err) {
+    console.warn('[PhaseOne Gatekeeper] LLM advisor error:', err instanceof Error ? err.message : 'unknown');
+    return null;
+  }
+}
+
 async function executePlaybook(
   playbook: Playbook,
   event: GatekeeperEvent,
-  dryRun: boolean
+  dryRun: boolean,
+  advisorSuggestion?: AdvisorResponse | null
 ): Promise<PlaybookExecution> {
   const execution: PlaybookExecution = {
     playbook_id: playbook.id,
@@ -135,6 +194,11 @@ async function executePlaybook(
     actions: [],
     actor: 'gatekeeper',
   };
+
+  if (advisorSuggestion?.ok) {
+    (execution as PlaybookExecution & { advisor_suggestion?: string; advisor_provider?: string }).advisor_suggestion = advisorSuggestion.suggestion;
+    (execution as PlaybookExecution & { advisor_provider?: string }).advisor_provider = advisorSuggestion.provider;
+  }
   
   for (const action of playbook.actions) {
     const actionWithPlaybookId = {
@@ -174,6 +238,7 @@ async function executePlaybook(
         rule_id: event.rule_id,
         actions_count: execution.actions.length,
         success_count: execution.actions.filter(a => a.ok).length,
+        advisor_provider: advisorSuggestion?.provider,
       },
     });
   }
@@ -311,14 +376,35 @@ export function getGatekeeperStatus(): {
   overrides: Record<string, unknown>;
   notifications: typeof getDashboardNotifications extends () => infer R ? R : never;
   queue_size: number;
+  llm_advisor: {
+    enabled: boolean;
+    config: Record<string, unknown>;
+  };
 } {
+  const llmConfig = loadGatekeeperLLMConfig();
   return {
     state: getGatekeeperState(),
     config: loadGatekeeperConfig(),
     overrides: listRuntimeOverrides(),
     notifications: getDashboardNotifications(),
     queue_size: state.eventQueue.length,
+    llm_advisor: {
+      enabled: isAdvisorEnabled(),
+      config: describeLLMConfig(llmConfig),
+    },
   };
+}
+
+export async function getAdvisorHealth(): Promise<{
+  openrouter: { ok: boolean; error?: string; latency_ms?: number };
+  ollama: { ok: boolean; error?: string; latency_ms?: number };
+  recommended_provider: string;
+}> {
+  return await checkLLMHealth();
+}
+
+export function getAdvisorConfig(): Record<string, unknown> {
+  return describeLLMConfig();
 }
 
 export function convertRuleHitToEvent(hit: {
@@ -355,7 +441,10 @@ export function __testResetWorker(): void {
   state.pendingConfirmations = [];
   state.eventQueue = [];
   state.isRunning = false;
+  state.advisorEnabled = false;
   resetPlaybooksCache();
   __testResetMatcher();
   __testResetActions();
 }
+
+export { loadGatekeeperLLMConfig, describeLLMConfig as describeAdvisorConfig };

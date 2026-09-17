@@ -694,3 +694,323 @@ actions:
     expect(playbooks).toEqual([]);
   });
 });
+
+describe('Gatekeeper LLM Advisor', () => {
+  function createMockFetch(responses: Array<{ ok: boolean; status?: number; body?: unknown; error?: Error }>): typeof fetch {
+    let callIndex = 0;
+    return async (_url: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
+      const response = responses[callIndex++] ?? { ok: false, status: 500 };
+      
+      if (response.error) {
+        throw response.error;
+      }
+      
+      return {
+        ok: response.ok,
+        status: response.status ?? (response.ok ? 200 : 500),
+        json: async () => response.body,
+        text: async () => JSON.stringify(response.body),
+      } as Response;
+    };
+  }
+
+  it('loads LLM config from environment', async () => {
+    const { loadGatekeeperLLMConfig } = await import('../shared/src/gatekeeper-llm.js');
+    const originalKey = process.env.OPENROUTER_API_KEY;
+    const originalPrimary = process.env.PHASEONE_GATEKEEPER_LLM_PRIMARY;
+
+    try {
+      process.env.OPENROUTER_API_KEY = 'test-key-123';
+      process.env.PHASEONE_GATEKEEPER_LLM_PRIMARY = 'openrouter';
+      
+      const config = loadGatekeeperLLMConfig();
+      
+      expect(config.enabled).toBe(true);
+      expect(config.primary).toBe('openrouter');
+      expect(config.fallback).toBe('ollama');
+      expect(config.openrouter.apiKey).toBe('test-key-123');
+      expect(config.openrouter.model).toBe('openrouter/auto');
+      expect(config.ollama.model).toBe('unrestricted:latest');
+    } finally {
+      if (originalKey === undefined) delete process.env.OPENROUTER_API_KEY;
+      else process.env.OPENROUTER_API_KEY = originalKey;
+      if (originalPrimary === undefined) delete process.env.PHASEONE_GATEKEEPER_LLM_PRIMARY;
+      else process.env.PHASEONE_GATEKEEPER_LLM_PRIMARY = originalPrimary;
+    }
+  });
+
+  it('returns disabled when no API key configured', async () => {
+    const { loadGatekeeperLLMConfig } = await import('../shared/src/gatekeeper-llm.js');
+    const originalKey = process.env.OPENROUTER_API_KEY;
+    const originalEnabled = process.env.PHASEONE_GATEKEEPER_LLM_ENABLED;
+
+    try {
+      delete process.env.OPENROUTER_API_KEY;
+      delete process.env.PHASEONE_GATEKEEPER_LLM_ENABLED;
+      
+      const config = loadGatekeeperLLMConfig();
+      expect(config.enabled).toBe(false);
+    } finally {
+      if (originalKey !== undefined) process.env.OPENROUTER_API_KEY = originalKey;
+      if (originalEnabled !== undefined) process.env.PHASEONE_GATEKEEPER_LLM_ENABLED = originalEnabled;
+    }
+  });
+
+  it('describes config without exposing API key', async () => {
+    const { describeConfig } = await import('../shared/src/gatekeeper-llm.js');
+    const config = {
+      enabled: true,
+      primary: 'openrouter' as const,
+      fallback: 'ollama' as const,
+      openrouter: { apiKey: 'secret-key-123', baseUrl: 'https://openrouter.ai/api/v1', model: 'openrouter/auto' },
+      ollama: { baseUrl: 'http://localhost:11434/v1', model: 'unrestricted:latest' },
+      timeoutMs: 30000,
+      maxTokens: 512,
+    };
+
+    const described = describeConfig(config);
+
+    expect(described.enabled).toBe(true);
+    expect((described.openrouter as { configured: boolean }).configured).toBe(true);
+    expect(JSON.stringify(described)).not.toContain('secret-key-123');
+  });
+
+  it('completes advisor prompt via primary (OpenRouter)', async () => {
+    const { completeAdvisorPrompt } = await import('../shared/src/gatekeeper-llm.js');
+    const mockFetch = createMockFetch([{
+      ok: true,
+      body: {
+        choices: [{ message: { content: 'Recommend enabling rate limiting for this agent.' } }],
+      },
+    }]);
+
+    const config = {
+      enabled: true,
+      primary: 'openrouter' as const,
+      fallback: 'ollama' as const,
+      openrouter: { apiKey: 'test-key', baseUrl: 'https://openrouter.ai/api/v1', model: 'openrouter/auto' },
+      ollama: { baseUrl: 'http://localhost:11434/v1', model: 'unrestricted:latest' },
+      timeoutMs: 30000,
+      maxTokens: 512,
+    };
+
+    const response = await completeAdvisorPrompt(
+      { context: 'test', event_summary: 'Canary trigger' },
+      config,
+      mockFetch
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.provider).toBe('openrouter');
+    expect(response.fallback_used).toBe(false);
+    expect(response.suggestion).toContain('rate limiting');
+  });
+
+  it('falls back to Ollama when OpenRouter fails', async () => {
+    const { completeAdvisorPrompt } = await import('../shared/src/gatekeeper-llm.js');
+    const mockFetch = createMockFetch([
+      { ok: false, status: 401, body: { error: { message: 'Invalid API key' } } },
+      { ok: true, body: { choices: [{ message: { content: 'Fallback suggestion: quarantine agent.' } }] } },
+    ]);
+
+    const config = {
+      enabled: true,
+      primary: 'openrouter' as const,
+      fallback: 'ollama' as const,
+      openrouter: { apiKey: 'bad-key', baseUrl: 'https://openrouter.ai/api/v1', model: 'openrouter/auto' },
+      ollama: { baseUrl: 'http://localhost:11434/v1', model: 'unrestricted:latest' },
+      timeoutMs: 30000,
+      maxTokens: 512,
+    };
+
+    const response = await completeAdvisorPrompt(
+      { context: 'test', event_summary: 'A2A blocked' },
+      config,
+      mockFetch
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.provider).toBe('ollama');
+    expect(response.fallback_used).toBe(true);
+    expect(response.suggestion).toContain('quarantine');
+  });
+
+  it('gracefully degrades when both providers fail', async () => {
+    const { completeAdvisorPrompt } = await import('../shared/src/gatekeeper-llm.js');
+    const mockFetch = createMockFetch([
+      { ok: false, status: 500, body: { error: { message: 'Server error' } } },
+      { ok: false, status: 503, body: { error: { message: 'Service unavailable' } } },
+    ]);
+
+    const config = {
+      enabled: true,
+      primary: 'openrouter' as const,
+      fallback: 'ollama' as const,
+      openrouter: { apiKey: 'test-key', baseUrl: 'https://openrouter.ai/api/v1', model: 'openrouter/auto' },
+      ollama: { baseUrl: 'http://localhost:11434/v1', model: 'unrestricted:latest' },
+      timeoutMs: 30000,
+      maxTokens: 512,
+    };
+
+    const response = await completeAdvisorPrompt(
+      { context: 'test', event_summary: 'Injection blocked' },
+      config,
+      mockFetch
+    );
+
+    expect(response.ok).toBe(false);
+    expect(response.provider).toBe('none');
+    expect(response.fallback_used).toBe(true);
+    expect(response.error).toContain('primary');
+    expect(response.error).toContain('fallback');
+  });
+
+  it('returns disabled error when advisor is not enabled', async () => {
+    const { completeAdvisorPrompt } = await import('../shared/src/gatekeeper-llm.js');
+    const config = {
+      enabled: false,
+      primary: 'openrouter' as const,
+      fallback: 'ollama' as const,
+      openrouter: { apiKey: '', baseUrl: 'https://openrouter.ai/api/v1', model: 'openrouter/auto' },
+      ollama: { baseUrl: 'http://localhost:11434/v1', model: 'unrestricted:latest' },
+      timeoutMs: 30000,
+      maxTokens: 512,
+    };
+
+    const response = await completeAdvisorPrompt(
+      { context: 'test', event_summary: 'Test event' },
+      config,
+      createMockFetch([])
+    );
+
+    expect(response.ok).toBe(false);
+    expect(response.error).toContain('not enabled');
+  });
+
+  it('handles timeout gracefully', async () => {
+    const { completeAdvisorPrompt } = await import('../shared/src/gatekeeper-llm.js');
+
+    const config = {
+      enabled: true,
+      primary: 'openrouter' as const,
+      fallback: 'none' as const,
+      openrouter: { apiKey: 'test-key', baseUrl: 'https://openrouter.ai/api/v1', model: 'openrouter/auto' },
+      ollama: { baseUrl: 'http://localhost:11434/v1', model: 'unrestricted:latest' },
+      timeoutMs: 50,
+      maxTokens: 512,
+    };
+
+    const mockFetch = createMockFetch([{
+      ok: false,
+      error: Object.assign(new Error('timeout after 50ms'), { name: 'AbortError' }),
+    }]);
+
+    const response = await completeAdvisorPrompt(
+      { context: 'test', event_summary: 'Timeout test' },
+      config,
+      mockFetch
+    );
+
+    expect(response.ok).toBe(false);
+  });
+
+  it('handles empty response from model', async () => {
+    const { completeAdvisorPrompt } = await import('../shared/src/gatekeeper-llm.js');
+    const mockFetch = createMockFetch([
+      { ok: true, body: { choices: [{ message: { content: '' } }] } },
+      { ok: true, body: { choices: [{ message: { content: 'Fallback response with content.' } }] } },
+    ]);
+
+    const config = {
+      enabled: true,
+      primary: 'openrouter' as const,
+      fallback: 'ollama' as const,
+      openrouter: { apiKey: 'test-key', baseUrl: 'https://openrouter.ai/api/v1', model: 'openrouter/auto' },
+      ollama: { baseUrl: 'http://localhost:11434/v1', model: 'unrestricted:latest' },
+      timeoutMs: 30000,
+      maxTokens: 512,
+    };
+
+    const response = await completeAdvisorPrompt(
+      { context: 'test', event_summary: 'Empty response test' },
+      config,
+      mockFetch
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.provider).toBe('ollama');
+    expect(response.fallback_used).toBe(true);
+  });
+
+  it('checks health of both providers', async () => {
+    const { checkLLMHealth } = await import('../shared/src/gatekeeper-llm.js');
+    const mockFetch = createMockFetch([
+      { ok: true, body: { choices: [{ message: { content: 'OK' } }] } },
+      { ok: true, body: { choices: [{ message: { content: 'OK' } }] } },
+    ]);
+
+    const config = {
+      enabled: true,
+      primary: 'openrouter' as const,
+      fallback: 'ollama' as const,
+      openrouter: { apiKey: 'test-key', baseUrl: 'https://openrouter.ai/api/v1', model: 'openrouter/auto' },
+      ollama: { baseUrl: 'http://localhost:11434/v1', model: 'unrestricted:latest' },
+      timeoutMs: 15000,
+      maxTokens: 64,
+    };
+
+    const health = await checkLLMHealth(config, mockFetch);
+
+    expect(health.openrouter.ok).toBe(true);
+    expect(health.ollama.ok).toBe(true);
+    expect(health.recommended_provider).toBe('openrouter');
+  });
+
+  it('recommends ollama when openrouter fails health check', async () => {
+    const { checkLLMHealth } = await import('../shared/src/gatekeeper-llm.js');
+    const mockFetch = createMockFetch([
+      { ok: false, status: 401, body: { error: { message: 'Unauthorized' } } },
+      { ok: true, body: { choices: [{ message: { content: 'OK' } }] } },
+    ]);
+
+    const config = {
+      enabled: true,
+      primary: 'openrouter' as const,
+      fallback: 'ollama' as const,
+      openrouter: { apiKey: 'bad-key', baseUrl: 'https://openrouter.ai/api/v1', model: 'openrouter/auto' },
+      ollama: { baseUrl: 'http://localhost:11434/v1', model: 'unrestricted:latest' },
+      timeoutMs: 15000,
+      maxTokens: 64,
+    };
+
+    const health = await checkLLMHealth(config, mockFetch);
+
+    expect(health.openrouter.ok).toBe(false);
+    expect(health.ollama.ok).toBe(true);
+    expect(health.recommended_provider).toBe('ollama');
+  });
+
+  it('recommends none when both providers fail health check', async () => {
+    const { checkLLMHealth } = await import('../shared/src/gatekeeper-llm.js');
+    const mockFetch = createMockFetch([
+      { ok: false, status: 500, body: { error: { message: 'Server error' } } },
+      { ok: false, status: 503, body: { error: { message: 'Service unavailable' } } },
+    ]);
+
+    const config = {
+      enabled: true,
+      primary: 'openrouter' as const,
+      fallback: 'ollama' as const,
+      openrouter: { apiKey: 'test-key', baseUrl: 'https://openrouter.ai/api/v1', model: 'openrouter/auto' },
+      ollama: { baseUrl: 'http://localhost:11434/v1', model: 'unrestricted:latest' },
+      timeoutMs: 15000,
+      maxTokens: 64,
+    };
+
+    const health = await checkLLMHealth(config, mockFetch);
+
+    expect(health.openrouter.ok).toBe(false);
+    expect(health.ollama.ok).toBe(false);
+    expect(health.recommended_provider).toBe('none');
+  });
+});
