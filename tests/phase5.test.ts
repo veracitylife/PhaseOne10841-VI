@@ -133,13 +133,14 @@ describe('onboard Phase 5 env', () => {
 });
 
 describe('version & docs artifacts', () => {
-  it('config productVersion is 0.5.1', () => {
-    expect(loadConfig().productVersion).toBe('0.5.1');
+  it('config productVersion matches package version', () => {
+    const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'));
+    expect(loadConfig().productVersion).toBe(pkg.version);
   });
 
-  it('package.json is 0.5.1', () => {
+  it('package.json has required scripts', () => {
     const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'));
-    expect(pkg.version).toBe('0.5.1');
+    expect(pkg.version).toMatch(/^0\.\d+\./);
     expect(pkg.scripts.smoke).toBeTruthy();
     expect(pkg.scripts.retention).toBeTruthy();
     expect(pkg.scripts.backup).toBeTruthy();

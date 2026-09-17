@@ -19,6 +19,12 @@ import {
   clearSessionCookies,
   validateCsrf,
   __testGetLastOtp,
+  // OIDC/SSO
+  isOidcEnabled,
+  getOidcStatus,
+  initiateOidcAuth,
+  handleOidcCallback,
+  handleOidcLogout,
 } from './auth.js';
 import { canMutate, type DashboardRole } from '../../shared/src/rbac.js';
 import { warnIfWeakSessionSecret } from '../../shared/src/session-secret.js';
@@ -32,7 +38,7 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const GATEWAY_URL = process.env.GATEWAY_URL ?? 'http://gateway:8080';
 const PORT = Number(process.env.DASHBOARD_PORT ?? 3000);
-const VERSION = '0.5.1';
+const VERSION = '0.8.0-pre';
 
 const app = new Hono();
 const authCfg = loadAuthConfig();
@@ -154,6 +160,7 @@ app.get('/api/health', async (c) => {
 
 app.get('/api/auth/status', (c) => {
   const auth = requireAuth(c);
+  const oidcStatus = getOidcStatus();
   return c.json({
     enabled: authCfg.enabled,
     authenticated: auth.ok,
@@ -162,6 +169,7 @@ app.get('/api/auth/status', (c) => {
     csrf: auth.ok ? auth.csrf : null,
     can_mutate: auth.ok ? canMutate(auth.role) : false,
     vendor: 'Veracity Integrity LLC',
+    oidc: oidcStatus,
   });
 });
 
@@ -228,6 +236,100 @@ app.get('/api/auth/test/last-otp', (c) => {
   return c.json({ otp: __testGetLastOtp() });
 });
 
+// OIDC/SSO routes
+app.get('/api/auth/oidc/initiate', async (c) => {
+  const returnUrl = c.req.query('return_url') ?? '/';
+  const result = await initiateOidcAuth(returnUrl);
+  if (!result.ok) {
+    return c.json({ ok: false, error: result.error }, 400);
+  }
+  return c.json({ ok: true, auth_url: result.authUrl });
+});
+
+app.get('/api/auth/oidc/callback', async (c) => {
+  const code = c.req.query('code');
+  const state = c.req.query('state');
+  const error = c.req.query('error');
+  const errorDesc = c.req.query('error_description');
+
+  if (error) {
+    const errMsg = errorDesc ? `${error}: ${errorDesc}` : error;
+    return c.html(`
+      <!DOCTYPE html>
+      <html><head><title>PhaseOne SSO Error</title></head>
+      <body style="font-family:system-ui;max-width:600px;margin:4rem auto;padding:1rem;">
+        <h1>SSO Login Failed</h1>
+        <p style="color:#d32f2f;">${errMsg}</p>
+        <a href="/">Return to dashboard</a>
+      </body></html>
+    `, 400);
+  }
+
+  if (!code || !state) {
+    return c.html(`
+      <!DOCTYPE html>
+      <html><head><title>PhaseOne SSO Error</title></head>
+      <body style="font-family:system-ui;max-width:600px;margin:4rem auto;padding:1rem;">
+        <h1>SSO Login Failed</h1>
+        <p style="color:#d32f2f;">Missing authorization code or state parameter</p>
+        <a href="/">Return to dashboard</a>
+      </body></html>
+    `, 400);
+  }
+
+  const result = await handleOidcCallback(code, state, authCfg);
+  if (!result.ok || !result.session) {
+    return c.html(`
+      <!DOCTYPE html>
+      <html><head><title>PhaseOne SSO Error</title></head>
+      <body style="font-family:system-ui;max-width:600px;margin:4rem auto;padding:1rem;">
+        <h1>SSO Login Failed</h1>
+        <p style="color:#d32f2f;">${result.error ?? 'Unknown error'}</p>
+        <a href="/">Return to dashboard</a>
+      </body></html>
+    `, 401);
+  }
+
+  // Record audit
+  await recordAudit({
+    actor_email: result.session.email,
+    action: 'login',
+    detail: { role: result.session.role, method: 'oidc' },
+    ip: c.req.header('x-forwarded-for') ?? undefined,
+  }).catch(() => undefined);
+
+  // Set session cookies and redirect
+  const redirectUrl = result.returnUrl ?? '/';
+  const headers = new Headers();
+  headers.set('Location', redirectUrl);
+  headers.append('Set-Cookie', sessionCookieHeader(result.session, authCfg));
+  headers.append('Set-Cookie', csrfCookieHeader(result.session, authCfg));
+  
+  return new Response(null, { status: 302, headers });
+});
+
+app.post('/api/auth/oidc/logout', async (c) => {
+  const cookies = parseCookies(c.req.header('cookie'));
+  const sid = cookies[authCfg.cookieName];
+  const session = getSession(sid);
+  
+  const postLogoutUri = c.req.query('post_logout_redirect_uri') ?? undefined;
+  
+  if (session) {
+    await recordAudit({ actor_email: session.email, action: 'logout', detail: { method: session.authMethod ?? 'otp' } }).catch(() => undefined);
+  }
+
+  const result = await handleOidcLogout(sid ?? '', postLogoutUri);
+  
+  const headers = new Headers({ 'content-type': 'application/json' });
+  for (const h of clearSessionCookies(authCfg)) headers.append('set-cookie', h);
+  
+  return new Response(
+    JSON.stringify({ ok: true, logout_url: result.logoutUrl }),
+    { status: 200, headers }
+  );
+});
+
 function gate(c: Parameters<typeof requireAuth>[0]) {
   return requireAuth(c);
 }
@@ -272,6 +374,22 @@ proxyGet('/api/metrics', '/v1/phaseone/metrics');
 proxyGet('/api/ops', '/v1/phaseone/ops');
 proxyGet('/api/retention', '/v1/phaseone/retention');
 proxyGet('/api/rate-limits', '/v1/phaseone/rate-limits');
+
+// Gatekeeper routes
+proxyGet('/api/gatekeeper/status', '/v1/phaseone/gatekeeper/status');
+proxyGet('/api/gatekeeper/rate-caps', '/v1/phaseone/gatekeeper/rate-caps');
+proxyGet('/api/gatekeeper/blast-radius', '/v1/phaseone/gatekeeper/blast-radius');
+
+app.post('/api/gatekeeper/simulate', async (c) => {
+  const auth = gate(c);
+  if (!auth.ok) return c.json({ error: auth.error }, 401);
+  const body = await c.req.json().catch(() => ({}));
+  const { status, data } = await gw('/v1/phaseone/gatekeeper/simulate', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  return c.json(data, status as 200);
+});
 
 app.get('/api/security/cookies', (c) => {
   const auth = gate(c);

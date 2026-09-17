@@ -1,6 +1,6 @@
 {
   "name": "phaseone-core",
-  "version": "0.5.1",
+  "version": "0.8.0-pre",
   "description": "PhaseOne10841 \u2014 Defensive Agent Security Gateway (Agent EDR) by Veracity Integrity LLC",
   "private": true,
   "type": "module",
@@ -29,7 +29,8 @@
     "smoke": "tsx scripts/smoke.ts",
     "retention": "tsx scripts/retention-cleanup.ts",
     "backup": "bash scripts/backup.sh",
-    "restore": "bash scripts/restore.sh"
+    "restore": "bash scripts/restore.sh",
+    "gatekeeper": "tsx scripts/gatekeeper.ts"
   },
   "engines": {
     "node": ">=20"

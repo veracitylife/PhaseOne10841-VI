@@ -1,0 +1,95 @@
+# PhaseOne10841 JavaScript SDK publish workflow
+# DEFENSIVE ONLY — no secrets committed
+#
+# Manual workflow_dispatch only. Requires NPM_TOKEN secret.
+# Set up NPM_TOKEN in GitHub repository secrets before publishing.
+
+name: Publish SDK (JavaScript)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (no actual publish)'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      npm_tag:
+        description: 'NPM tag (latest, beta, next)'
+        required: false
+        default: 'latest'
+        type: choice
+        options:
+          - 'latest'
+          - 'beta'
+          - 'next'
+
+defaults:
+  run:
+    working-directory: packages/sdk-js
+
+jobs:
+  publish:
+    name: Build and Publish
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+          cache-dependency-path: packages/sdk-js/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Check package
+        run: npm pack --dry-run
+
+      - name: Publish (dry run)
+        if: ${{ inputs.dry_run == 'true' }}
+        run: |
+          echo "=== DRY RUN ==="
+          echo "Would publish @phaseone/client to npm with tag: ${{ inputs.npm_tag }}"
+          npm pack
+          echo "Package contents:"
+          tar -tzf *.tgz
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish
+        if: ${{ inputs.dry_run == 'false' }}
+        run: npm publish --tag ${{ inputs.npm_tag }} --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        if: ${{ inputs.dry_run == 'false' }}
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: sdk-js-v${{ github.run_number }}
+          release_name: "@phaseone/client v${{ github.run_number }}"
+          body: |
+            PhaseOne10841 JavaScript/TypeScript SDK release.
+            
+            Install: `npm install @phaseone/client`
+            
+            See [SDK documentation](docs/sdk-js.md) for usage.
+          draft: true
+          prerelease: ${{ inputs.npm_tag != 'latest' }}

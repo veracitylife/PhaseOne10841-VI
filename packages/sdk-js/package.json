@@ -1,0 +1,47 @@
+{
+  "name": "@phaseone/client",
+  "version": "0.8.0-pre",
+  "description": "PhaseOne10841 TypeScript/JavaScript client SDK — Defensive Agent Security Gateway",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "phaseone",
+    "agent-security",
+    "agent-edr",
+    "llm-security",
+    "ai-security",
+    "defensive"
+  ],
+  "author": "Veracity Integrity LLC <https://VeracityIntegrity.com>",
+  "license": "MIT",
+  "homepage": "https://VeracityIntegrity.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/veracityintegrity/phaseone10841",
+    "directory": "packages/sdk-js"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,6 +1,6 @@
 # PhaseOne10841 — Defensive Agent Security Gateway (Agent EDR)
 
-**phaseone-core v0.5.1**
+**phaseone-core v0.8.0-pre** (Phase 8 Wave A)
 
 Watches autonomous agents the way CrowdStrike watches endpoints — **outside** the agent, not via prompt-only hope.
 
@@ -381,13 +381,45 @@ PhaseOne10841ME/
 
 ---
 
+## Phase 8 — Enterprise features (this release)
+
+### Wave A (v0.8.0-pre)
+
+| Feature | Status |
+|---------|--------|
+| **OIDC/SSO (#1)** | ✅ Complete — Okta/Azure AD/Auth0 support with PKCE, role claims, end-session |
+| **Gatekeeper simulation (#9)** | ✅ Complete — Dry-run replay, blast-radius analysis, rate caps, CLI |
+| **Packaged SDKs (#8)** | ✅ Complete — `@phaseone/client` (npm), `phaseone-client` (PyPI) |
+
+### New in Phase 8 Wave A
+
+- **OIDC/SSO authentication** — Enterprise SSO via Okta, Azure AD, Auth0
+  - PKCE-enabled authorization code flow
+  - Role claims mapping to PhaseOne RBAC
+  - IdP end-session logout support
+  - See [`docs/oidc-setup.md`](docs/oidc-setup.md)
+
+- **Gatekeeper simulation** — Dry-run policy replay
+  - `POST /v1/phaseone/gatekeeper/simulate` API
+  - Blast-radius summary (agents/tools/domains affected)
+  - Rate caps + cooldowns for contain/harden actions
+  - CLI: `npm run gatekeeper -- simulate`
+  - Dashboard simulation controls
+
+- **Packaged SDKs** — Official client libraries
+  - `@phaseone/client` (TypeScript/JavaScript) — [`docs/sdk-js.md`](docs/sdk-js.md)
+  - `phaseone-client` (Python) — [`docs/sdk-python.md`](docs/sdk-python.md)
+  - OpenAI SDK integration helpers
+  - Tool enforcement wrappers
+
+---
+
 ## Roadmap (indicative)
 
 - Richer rule language (aggregations, time windows)  
-- Deeper framework SDKs (official LangChain / CrewAI packages)  
 - Optional signed canary packages for production deployments  
 - Multi-tenant org controls beyond email allowlists  
-- Hardened SMTP/OIDC SSO for enterprise MFA  
+- Additional IdP integrations (SAML, etc.)  
 
 Roadmap items are aspirational and may change; contact Veracity Integrity LLC for commercial roadmap discussions.
 

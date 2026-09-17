@@ -111,7 +111,7 @@
   <header>
     <div>
       <h1>PhaseOne10841 <span class="badge">Agent EDR</span></h1>
-      <div class="sub">A product of <a href="https://VeracityIntegrity.com" target="_blank" rel="noopener">Veracity Integrity LLC</a> · v0.5</div>
+      <div class="sub">A product of <a href="https://VeracityIntegrity.com" target="_blank" rel="noopener">Veracity Integrity LLC</a> · v0.8</div>
     </div>
     <div class="row">
       <span class="sub" id="auth-email"></span> <span class="badge" id="auth-role"></span>
@@ -123,6 +123,15 @@
   <div id="login-gate" class="hidden">
     <h2>Admin sign-in</h2>
     <p class="sub">Email one-time code (MFA). Codes are emailed via SMTP when configured; otherwise logged to the server fallback file for local/dev.</p>
+    
+    <!-- SSO Login Section -->
+    <div id="sso-section" class="hidden" style="margin-bottom:1.5rem;">
+      <button id="btn-sso-login" onclick="initiateSso()" style="width:100%;padding:.75rem;">Sign in with SSO</button>
+      <p class="sub" style="text-align:center;margin:.5rem 0 0;font-size:.75rem;">Enterprise single sign-on via <span id="sso-issuer"></span></p>
+      <hr style="border:0;border-top:1px solid var(--border);margin:1rem 0;" />
+      <p class="sub" style="text-align:center;font-size:.75rem;">Or use email OTP below</p>
+    </div>
+    
     <div class="field">
       <label>Work email</label>
       <input id="login-email" type="email" placeholder="admin@example.com" autocomplete="username" />
@@ -305,6 +314,30 @@
               </div>
             </div>
           </div>
+          <div class="panel">
+            <h2>Gatekeeper Simulation</h2>
+            <p class="sub">Dry-run policy replay: evaluate historical events against current policy without mutating. Useful for testing policy changes before deployment.</p>
+            <div class="row field">
+              <input id="sim-limit" type="number" placeholder="Max events (default: 100)" style="max-width:150px" value="100" />
+              <select id="sim-event-type" style="max-width:180px">
+                <option value="">All event types</option>
+                <option value="tool.call">tool.call</option>
+                <option value="shell.exec">shell.exec</option>
+                <option value="http.request">http.request</option>
+                <option value="filesystem.access">filesystem.access</option>
+                <option value="mcp.call">mcp.call</option>
+              </select>
+              <button onclick="runSimulation()">Run Simulation</button>
+              <button class="ghost" onclick="getBlastRadius()">Blast Radius</button>
+            </div>
+            <div id="sim-results"></div>
+            <pre id="sim-out" style="max-height:400px;overflow:auto;margin-top:.5rem"></pre>
+          </div>
+          <div class="panel">
+            <h2>Gatekeeper Rate Caps</h2>
+            <p class="sub">Rate limiting for contain/harden actions. Prevents thrashing and provides circuit-breaker protection.</p>
+            <pre id="rate-cap-out"></pre>
+          </div>
         </section>
 
         <section id="view-settings" class="view hidden">
@@ -316,6 +349,13 @@
               <button class="ghost" onclick="testAlert()">Test alert webhook</button>
             </div>
             <pre id="alert-out"></pre>
+          </div>
+          <div class="panel">
+            <h2>Identity Provider (OIDC/SSO)</h2>
+            <div id="idp-status">
+              <pre id="idp-out"></pre>
+            </div>
+            <p class="sub">Configure OIDC SSO via <code>PHASEONE_OIDC_*</code> environment variables. See <a href="/docs/oidc-setup.md" target="_blank">docs/oidc-setup.md</a> for Okta, Azure AD, Auth0 setup.</p>
           </div>
         </section>
       </main>
@@ -392,6 +432,18 @@
     document.getElementById('app').classList.add('hidden');
     document.getElementById('btn-logout').classList.add('hidden');
     document.getElementById('btn-refresh').classList.add('hidden');
+    
+    // Show SSO section if OIDC is enabled
+    if (data.oidc && data.oidc.enabled) {
+      document.getElementById('sso-section').classList.remove('hidden');
+      const issuerHost = data.oidc.issuer ? new URL(data.oidc.issuer).hostname : 'IdP';
+      document.getElementById('sso-issuer').textContent = issuerHost;
+      // If SSO-only mode, hide OTP fields
+      if (data.oidc.ssoOnly) {
+        document.getElementById('login-email').parentElement.classList.add('hidden');
+        document.getElementById('btn-send-otp').classList.add('hidden');
+      }
+    }
     return false;
   }
 
@@ -430,9 +482,25 @@
   }
 
   async function logout() {
+    // Try OIDC logout first which may redirect to IdP
+    const { data } = await api('/api/auth/oidc/logout', { method: 'POST', body: '{}' });
+    if (data.logout_url) {
+      window.location.href = data.logout_url;
+      return;
+    }
+    // Fallback to regular logout
     await api('/api/auth/logout', { method: 'POST', body: '{}' });
     csrf = null;
     location.reload();
+  }
+  
+  async function initiateSso() {
+    const { data } = await api('/api/auth/oidc/initiate?return_url=' + encodeURIComponent(window.location.pathname));
+    if (data.auth_url) {
+      window.location.href = data.auth_url;
+    } else {
+      document.getElementById('login-msg').textContent = data.error || 'SSO initiation failed';
+    }
   }
 
   document.getElementById('nav').addEventListener('click', (e) => {
@@ -629,6 +697,8 @@
       document.getElementById('rate-out').textContent = JSON.stringify(rl.data, null, 2);
       const ck = await api('/api/security/cookies');
       document.getElementById('cookie-out').textContent = JSON.stringify(ck.data, null, 2);
+      const rc = await api('/api/gatekeeper/rate-caps');
+      document.getElementById('rate-cap-out').textContent = JSON.stringify(rc.data, null, 2);
     }
     if (currentView === 'rules') {
       const { data } = await api('/api/rules');
@@ -682,6 +752,16 @@
         health: data, auth: auth.data, alerts: alerts.data,
         metrics_counters: { blocks: metrics.data?.blocks, canaries: metrics.data?.canaries },
       }, null, 2);
+      
+      // IdP/OIDC status
+      const oidc = auth.data?.oidc || {};
+      document.getElementById('idp-out').textContent = JSON.stringify({
+        enabled: oidc.enabled || false,
+        issuer: oidc.issuer || 'Not configured',
+        sso_only: oidc.ssoOnly || false,
+        pkce_enabled: oidc.hasPkce || false,
+        configure_via: 'PHASEONE_OIDC_* environment variables',
+      }, null, 2);
     }
   }
 
@@ -697,6 +777,68 @@
     const { data } = await api('/api/alerts/test', { method: 'POST', body: '{}' });
     document.getElementById('alert-out').textContent = JSON.stringify(data, null, 2);
     toast(data.ok ? 'Alert sent' : (data.error || 'alert failed'));
+  }
+
+  async function runSimulation() {
+    const limit = document.getElementById('sim-limit').value || 100;
+    const eventType = document.getElementById('sim-event-type').value;
+    
+    document.getElementById('sim-results').innerHTML = '<div class="sub">Running simulation...</div>';
+    document.getElementById('sim-out').textContent = '';
+    
+    const body = {
+      use_historical: true,
+      max_events: Number(limit),
+      event_types: eventType ? [eventType] : undefined,
+    };
+    
+    const { res, data } = await api('/api/gatekeeper/simulate', { method: 'POST', body: JSON.stringify(body) });
+    
+    if (!res.ok) {
+      document.getElementById('sim-results').innerHTML = '<div class="empty" style="color:var(--danger)">Simulation failed</div>';
+      document.getElementById('sim-out').textContent = JSON.stringify(data, null, 2);
+      return;
+    }
+    
+    const br = data.blast_radius || {};
+    document.getElementById('sim-results').innerHTML = `
+      <div class="cards" style="margin:.75rem 0">
+        <div class="card"><div class="label">Analyzed</div><div class="value">${br.total_events || 0}</div></div>
+        <div class="card danger"><div class="label">Would Block</div><div class="value">${br.blocked_count || 0}</div></div>
+        <div class="card warn"><div class="label">Need Approval</div><div class="value">${br.approval_required_count || 0}</div></div>
+        <div class="card ok"><div class="label">Would Allow</div><div class="value">${br.allowed_count || 0}</div></div>
+        <div class="card danger"><div class="label">Canaries</div><div class="value">${br.canary_matches || 0}</div></div>
+        <div class="card danger"><div class="label">Secrets</div><div class="value">${br.secret_matches || 0}</div></div>
+      </div>
+      <div class="sub">Simulation completed in ${data.simulation_time_ms || 0}ms · DRY RUN (no actions taken)</div>
+    `;
+    document.getElementById('sim-out').textContent = JSON.stringify(data, null, 2);
+    toast('Simulation complete');
+  }
+
+  async function getBlastRadius() {
+    const limit = document.getElementById('sim-limit').value || 500;
+    document.getElementById('sim-results').innerHTML = '<div class="sub">Calculating blast radius...</div>';
+    
+    const { res, data } = await api('/api/gatekeeper/blast-radius?limit=' + limit);
+    
+    if (!res.ok) {
+      document.getElementById('sim-results').innerHTML = '<div class="empty" style="color:var(--danger)">Failed to calculate blast radius</div>';
+      return;
+    }
+    
+    const br = data.blast_radius || {};
+    document.getElementById('sim-results').innerHTML = `
+      <div class="cards" style="margin:.75rem 0">
+        <div class="card"><div class="label">Events</div><div class="value">${br.total_events || 0}</div></div>
+        <div class="card"><div class="label">Agents</div><div class="value">${(br.affected_agents || []).length}</div></div>
+        <div class="card"><div class="label">Tools</div><div class="value">${(br.affected_tools || []).length}</div></div>
+        <div class="card"><div class="label">Domains</div><div class="value">${(br.affected_domains || []).length}</div></div>
+      </div>
+      <div class="sub">Affected agents: ${(br.affected_agents || []).slice(0, 5).join(', ')}</div>
+      <div class="sub">Top tools: ${(br.affected_tools || []).slice(0, 5).join(', ')}</div>
+    `;
+    document.getElementById('sim-out').textContent = JSON.stringify(data, null, 2);
   }
 
   checkAuth().then((ok) => { if (ok) refreshAll(); });
