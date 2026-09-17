@@ -1,0 +1,26 @@
+id: phaseone.network.multi_domain
+title: Agent accessing multiple distinct domains
+description: >
+  Detects an agent accessing many different domains within a time window.
+  May indicate data exfiltration or reconnaissance behavior.
+status: experimental
+level: medium
+enabled: true
+logsource:
+  product: PhaseOne10841
+detection:
+  selection:
+    event_type: http_request
+  aggregation:
+    type: distinct_count
+    field: domain
+    group_by:
+      - agent_id
+    threshold: 10
+    comparison: gte
+  timewindow:
+    duration_ms: 300000  # 5 minutes
+  condition: selection and aggregation
+falsepositives:
+  - Web crawlers
+  - Research agents with broad access requirements

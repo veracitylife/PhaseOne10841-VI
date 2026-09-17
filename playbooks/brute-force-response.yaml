@@ -1,0 +1,36 @@
+# PhaseOne10841 Gatekeeper Playbook — Brute Force Response
+# Veracity Integrity LLC · https://VeracityIntegrity.com
+# DEFENSIVE ONLY
+
+id: brute-force-response
+name: Brute Force Attempt Response
+description: Respond to rapid repeated failures (potential brute force)
+
+enabled: true
+tier: contain
+
+match:
+  rule_id: brute-force-attempt
+  count: 3
+  window_ms: 60000
+
+actions:
+  - type: emit_alert
+    params:
+      message: "Brute force pattern detected — rate limit tightened"
+
+  - type: write_audit
+    params:
+      action: gatekeeper.brute_force_response
+
+  - type: dashboard_notify
+    params:
+      message: "🚨 Brute force pattern — activating rate limit"
+
+  - type: tighten_rate_limit
+    params:
+      factor: 0.25
+      duration_ms: 600000
+
+cooldown_ms: 300000
+max_executions_per_window: 3

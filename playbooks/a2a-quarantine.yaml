@@ -1,0 +1,38 @@
+# PhaseOne10841 Gatekeeper Playbook — A2A Quarantine Response
+# Veracity Integrity LLC · https://VeracityIntegrity.com
+# DEFENSIVE ONLY
+
+id: a2a-quarantine-response
+name: A2A Quarantine Response
+description: Respond when an agent-to-agent message is quarantined
+
+enabled: true
+tier: contain
+
+match:
+  event_type:
+    - a2a.quarantined
+    - a2a.blocked
+  severity:
+    - high
+    - critical
+
+actions:
+  - type: emit_alert
+    params:
+      message: "A2A message quarantined — agent trust lowered"
+
+  - type: write_audit
+    params:
+      action: gatekeeper.a2a_quarantine
+
+  - type: dashboard_notify
+    params:
+      message: "🔒 A2A quarantine — agent isolated"
+
+  - type: lower_a2a_trust
+    params:
+      trust_level: QUARANTINED
+
+cooldown_ms: 60000
+max_executions_per_window: 10

@@ -18,13 +18,10 @@ import {
   csrfCookieHeader,
   clearSessionCookies,
   validateCsrf,
+  createSession,
+  isEmailAllowlisted,
+  roleForEmail,
   __testGetLastOtp,
-  // OIDC/SSO
-  isOidcEnabled,
-  getOidcStatus,
-  initiateOidcAuth,
-  handleOidcCallback,
-  handleOidcLogout,
 } from './auth.js';
 import { canMutate, type DashboardRole } from '../../shared/src/rbac.js';
 import { warnIfWeakSessionSecret } from '../../shared/src/session-secret.js';
@@ -34,6 +31,19 @@ import {
   dashboardContentSecurityPolicy,
   describeCookieDefaults,
 } from '../../shared/src/security-headers.js';
+import {
+  loadOIDCConfig,
+  isOIDCEnabled,
+  getOIDCStatus,
+  createOIDCAuthorizationUrl,
+  handleOIDCCallback,
+  describeOIDCConfig,
+  loadOidcConfig,
+  isOidcEnabled,
+  createPendingAuth,
+  consumePendingAuth,
+  resolveRoleFromClaims,
+} from '../../shared/src/oidc.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const GATEWAY_URL = process.env.GATEWAY_URL ?? 'http://gateway:8080';
@@ -160,7 +170,6 @@ app.get('/api/health', async (c) => {
 
 app.get('/api/auth/status', (c) => {
   const auth = requireAuth(c);
-  const oidcStatus = getOidcStatus();
   return c.json({
     enabled: authCfg.enabled,
     authenticated: auth.ok,
@@ -169,7 +178,6 @@ app.get('/api/auth/status', (c) => {
     csrf: auth.ok ? auth.csrf : null,
     can_mutate: auth.ok ? canMutate(auth.role) : false,
     vendor: 'Veracity Integrity LLC',
-    oidc: oidcStatus,
   });
 });
 
@@ -236,98 +244,140 @@ app.get('/api/auth/test/last-otp', (c) => {
   return c.json({ otp: __testGetLastOtp() });
 });
 
-// OIDC/SSO routes
-app.get('/api/auth/oidc/initiate', async (c) => {
-  const returnUrl = c.req.query('return_url') ?? '/';
-  const result = await initiateOidcAuth(returnUrl);
-  if (!result.ok) {
-    return c.json({ ok: false, error: result.error }, 400);
+app.get('/api/auth/oidc/status', (c) => {
+  const status = getOIDCStatus();
+  return c.json({
+    ...status,
+    config: isOIDCEnabled() ? describeOIDCConfig() : null,
+    vendor: 'Veracity Integrity LLC',
+  });
+});
+
+app.get('/api/auth/oidc/login', (c) => {
+  const oidcCfg = loadOIDCConfig();
+  if (!isOIDCEnabled(oidcCfg)) {
+    return c.json({ ok: false, error: 'OIDC is not enabled' }, 400);
   }
-  return c.json({ ok: true, auth_url: result.authUrl });
+  
+  try {
+    const { url, state } = createOIDCAuthorizationUrl(oidcCfg);
+    return c.json({ ok: true, redirect_url: url, state });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'OIDC initialization failed';
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+// Wave A: initiate endpoint for SSO button
+app.get('/api/auth/oidc/initiate', (c) => {
+  const returnUrl = c.req.query('return_url') ?? '/';
+  const oidcCfg = loadOidcConfig();
+  
+  if (!isOidcEnabled(oidcCfg)) {
+    return c.json({ ok: false, error: 'OIDC is not enabled' }, 400);
+  }
+  
+  try {
+    const pending = createPendingAuth(oidcCfg, returnUrl);
+    const authEndpoint = oidcCfg.authorizationEndpoint ?? `${oidcCfg.issuer}/authorize`;
+    const params = new URLSearchParams({
+      response_type: 'code',
+      client_id: oidcCfg.clientId,
+      redirect_uri: oidcCfg.redirectUri,
+      scope: oidcCfg.scopes.join(' '),
+      state: pending.state,
+      nonce: pending.nonce,
+    });
+    if (pending.codeChallenge) {
+      params.set('code_challenge', pending.codeChallenge);
+      params.set('code_challenge_method', 'S256');
+    }
+    const authUrl = `${authEndpoint}?${params.toString()}`;
+    return c.json({ ok: true, auth_url: authUrl });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'OIDC initialization failed';
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+// Wave A: logout endpoint
+app.post('/api/auth/oidc/logout', async (c) => {
+  const cookies = parseCookies(c.req.header('cookie') ?? '');
+  const sessionId = cookies.phaseone_session;
+  const session = sessionId ? getSession(sessionId) : null;
+  
+  if (session) {
+    destroySession(sessionId!);
+    await recordAudit({
+      actor_email: session.email,
+      action: 'logout',
+      detail: { method: session.authMethod ?? 'oidc' },
+      ip: c.req.header('x-forwarded-for') ?? undefined,
+    }).catch(() => undefined);
+  }
+  
+  const oidcCfg = loadOidcConfig();
+  let logoutUrl: string | undefined;
+  
+  if (oidcCfg.endSessionEndpoint && session?.idToken) {
+    const params = new URLSearchParams({
+      id_token_hint: session.idToken,
+      post_logout_redirect_uri: `${process.env.DASHBOARD_URL ?? 'http://localhost:3000'}/`,
+    });
+    logoutUrl = `${oidcCfg.endSessionEndpoint}?${params.toString()}`;
+  }
+  
+  const headers = new Headers();
+  for (const cookie of clearSessionCookies(authCfg)) {
+    headers.append('set-cookie', cookie);
+  }
+  
+  return c.json({ ok: true, logout_url: logoutUrl }, { headers });
 });
 
 app.get('/api/auth/oidc/callback', async (c) => {
   const code = c.req.query('code');
   const state = c.req.query('state');
   const error = c.req.query('error');
-  const errorDesc = c.req.query('error_description');
+  const errorDescription = c.req.query('error_description');
 
   if (error) {
-    const errMsg = errorDesc ? `${error}: ${errorDesc}` : error;
-    return c.html(`
-      <!DOCTYPE html>
-      <html><head><title>PhaseOne SSO Error</title></head>
-      <body style="font-family:system-ui;max-width:600px;margin:4rem auto;padding:1rem;">
-        <h1>SSO Login Failed</h1>
-        <p style="color:#d32f2f;">${errMsg}</p>
-        <a href="/">Return to dashboard</a>
-      </body></html>
-    `, 400);
+    console.error('[PhaseOne OIDC] Authorization error:', error, errorDescription);
+    return c.redirect(`/?error=oidc_${error}`);
   }
 
   if (!code || !state) {
-    return c.html(`
-      <!DOCTYPE html>
-      <html><head><title>PhaseOne SSO Error</title></head>
-      <body style="font-family:system-ui;max-width:600px;margin:4rem auto;padding:1rem;">
-        <h1>SSO Login Failed</h1>
-        <p style="color:#d32f2f;">Missing authorization code or state parameter</p>
-        <a href="/">Return to dashboard</a>
-      </body></html>
-    `, 400);
+    return c.redirect('/?error=oidc_missing_params');
   }
 
-  const result = await handleOidcCallback(code, state, authCfg);
-  if (!result.ok || !result.session) {
-    return c.html(`
-      <!DOCTYPE html>
-      <html><head><title>PhaseOne SSO Error</title></head>
-      <body style="font-family:system-ui;max-width:600px;margin:4rem auto;padding:1rem;">
-        <h1>SSO Login Failed</h1>
-        <p style="color:#d32f2f;">${result.error ?? 'Unknown error'}</p>
-        <a href="/">Return to dashboard</a>
-      </body></html>
-    `, 401);
+  const result = await handleOIDCCallback(code, state);
+  
+  if (!result.ok || !result.email) {
+    console.error('[PhaseOne OIDC] Callback failed:', result.error);
+    return c.redirect(`/?error=oidc_auth_failed`);
   }
 
-  // Record audit
+  if (!isEmailAllowlisted(result.email, authCfg)) {
+    console.warn('[PhaseOne OIDC] Email not in allowlist:', result.email);
+    return c.redirect('/?error=oidc_not_authorized');
+  }
+
+  const role = result.role ?? roleForEmail(result.email, authCfg);
+  const session = createSession(result.email, authCfg);
+  
   await recordAudit({
-    actor_email: result.session.email,
+    actor_email: session.email,
     action: 'login',
-    detail: { role: result.session.role, method: 'oidc' },
+    detail: { method: 'oidc', role: session.role },
     ip: c.req.header('x-forwarded-for') ?? undefined,
   }).catch(() => undefined);
 
-  // Set session cookies and redirect
-  const redirectUrl = result.returnUrl ?? '/';
   const headers = new Headers();
-  headers.set('Location', redirectUrl);
-  headers.append('Set-Cookie', sessionCookieHeader(result.session, authCfg));
-  headers.append('Set-Cookie', csrfCookieHeader(result.session, authCfg));
+  headers.append('Location', '/?oidc=success');
+  headers.append('set-cookie', sessionCookieHeader(session, authCfg));
+  headers.append('set-cookie', csrfCookieHeader(session, authCfg));
   
   return new Response(null, { status: 302, headers });
-});
-
-app.post('/api/auth/oidc/logout', async (c) => {
-  const cookies = parseCookies(c.req.header('cookie'));
-  const sid = cookies[authCfg.cookieName];
-  const session = getSession(sid);
-  
-  const postLogoutUri = c.req.query('post_logout_redirect_uri') ?? undefined;
-  
-  if (session) {
-    await recordAudit({ actor_email: session.email, action: 'logout', detail: { method: session.authMethod ?? 'otp' } }).catch(() => undefined);
-  }
-
-  const result = await handleOidcLogout(sid ?? '', postLogoutUri);
-  
-  const headers = new Headers({ 'content-type': 'application/json' });
-  for (const h of clearSessionCookies(authCfg)) headers.append('set-cookie', h);
-  
-  return new Response(
-    JSON.stringify({ ok: true, logout_url: result.logoutUrl }),
-    { status: 200, headers }
-  );
 });
 
 function gate(c: Parameters<typeof requireAuth>[0]) {
@@ -375,21 +425,13 @@ proxyGet('/api/ops', '/v1/phaseone/ops');
 proxyGet('/api/retention', '/v1/phaseone/retention');
 proxyGet('/api/rate-limits', '/v1/phaseone/rate-limits');
 
-// Gatekeeper routes
 proxyGet('/api/gatekeeper/status', '/v1/phaseone/gatekeeper/status');
-proxyGet('/api/gatekeeper/rate-caps', '/v1/phaseone/gatekeeper/rate-caps');
-proxyGet('/api/gatekeeper/blast-radius', '/v1/phaseone/gatekeeper/blast-radius');
-
-app.post('/api/gatekeeper/simulate', async (c) => {
-  const auth = gate(c);
-  if (!auth.ok) return c.json({ error: auth.error }, 401);
-  const body = await c.req.json().catch(() => ({}));
-  const { status, data } = await gw('/v1/phaseone/gatekeeper/simulate', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
-  return c.json(data, status as 200);
-});
+proxyGet('/api/gatekeeper/config', '/v1/phaseone/gatekeeper/config');
+proxyGet('/api/gatekeeper/playbooks', '/v1/phaseone/gatekeeper/playbooks');
+proxyGet('/api/gatekeeper/pending', '/v1/phaseone/gatekeeper/pending');
+proxyGet('/api/gatekeeper/recent', '/v1/phaseone/gatekeeper/recent');
+proxyGet('/api/gatekeeper/overrides', '/v1/phaseone/gatekeeper/overrides');
+proxyGet('/api/gatekeeper/notifications', '/v1/phaseone/gatekeeper/notifications');
 
 app.get('/api/security/cookies', (c) => {
   const auth = gate(c);
@@ -545,6 +587,58 @@ app.post('/api/alerts/test', async (c) => {
     method: 'POST',
     body: JSON.stringify({ ...body, actor_email: auth.email }),
   });
+  return c.json(data, status as 200);
+});
+
+app.post('/api/gatekeeper/config', async (c) => {
+  const auth = requireMutatingAuth(c);
+  if (!auth.ok) return c.json({ error: auth.error }, auth.status);
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const { status, data } = await gw('/v1/phaseone/gatekeeper/config', {
+    method: 'POST',
+    body: JSON.stringify({ ...body, actor_email: auth.email }),
+  });
+  return c.json(data, status as 200);
+});
+
+app.post('/api/gatekeeper/run', async (c) => {
+  const auth = requireMutatingAuth(c);
+  if (!auth.ok) return c.json({ error: auth.error }, auth.status);
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const { status, data } = await gw('/v1/phaseone/gatekeeper/run', {
+    method: 'POST',
+    body: JSON.stringify({ ...body, actor_email: auth.email }),
+  });
+  return c.json(data, status as 200);
+});
+
+app.post('/api/gatekeeper/confirm/:id', async (c) => {
+  const auth = requireMutatingAuth(c);
+  if (!auth.ok) return c.json({ error: auth.error }, auth.status);
+  const { status, data } = await gw(`/v1/phaseone/gatekeeper/confirm/${c.req.param('id')}`, {
+    method: 'POST',
+    body: JSON.stringify({ actor_email: auth.email }),
+  });
+  await recordAudit({
+    actor_email: auth.email,
+    action: 'gatekeeper.confirm',
+    resource: c.req.param('id'),
+  }).catch(() => undefined);
+  return c.json(data, status as 200);
+});
+
+app.post('/api/gatekeeper/deny/:id', async (c) => {
+  const auth = requireMutatingAuth(c);
+  if (!auth.ok) return c.json({ error: auth.error }, auth.status);
+  const { status, data } = await gw(`/v1/phaseone/gatekeeper/deny/${c.req.param('id')}`, {
+    method: 'POST',
+    body: JSON.stringify({ actor_email: auth.email }),
+  });
+  await recordAudit({
+    actor_email: auth.email,
+    action: 'gatekeeper.deny',
+    resource: c.req.param('id'),
+  }).catch(() => undefined);
   return c.json(data, status as 200);
 });
 

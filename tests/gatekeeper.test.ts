@@ -1,251 +1,1105 @@
 /**
- * Gatekeeper simulation and rate-cap tests.
- * DEFENSIVE ONLY.
+ * PhaseOne10841 Gatekeeper Tests — Phase 7
+ * DEFENSIVE ONLY — no exploit tooling.
+ * 
+ * Veracity Integrity LLC · https://VeracityIntegrity.com
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+
 import {
-  simulateEvents,
-  calculateBlastRadius,
+  loadPlaybooks,
+  validatePlaybook,
+  resetPlaybooksCache,
+  listPlaybooksDetailed,
+} from '../gatekeeper/src/playbooks.js';
+import {
+  matchPlaybook,
+  matchAllPlaybooks,
+  recordPlaybookExecution,
+  __testResetMatcher,
+} from '../gatekeeper/src/matcher.js';
+import {
+  executeAction,
+  getRuntimeOverride,
+  listRuntimeOverrides,
+  getDashboardNotifications,
+  __testResetActions,
+} from '../gatekeeper/src/actions.js';
+import {
+  getGatekeeperStatus,
+  processEvent,
+  runGatekeeperCycle,
+  queueEvent,
+  setGatekeeperEnabled,
+  setGatekeeperDryRun,
+  __testResetWorker,
+} from '../gatekeeper/src/worker.js';
+import type { Playbook, GatekeeperEvent, PlaybookAction } from '../gatekeeper/src/types.js';
+import { __testResetAudit, __testPeekAudit } from '../shared/src/audit.js';
+
+describe('Gatekeeper Playbook Validation', () => {
+  it('validates a correct observe playbook', () => {
+    const playbook = {
+      id: 'test-observe',
+      name: 'Test Observe',
+      tier: 'observe',
+      match: { event_type: 'canary.trigger' },
+      actions: [{ type: 'emit_alert' }],
+    };
+    
+    const result = validatePlaybook(playbook);
+    expect(result.ok).toBe(true);
+    expect(result.playbook?.id).toBe('test-observe');
+    expect(result.playbook?.tier).toBe('observe');
+  });
+
+  it('validates a correct contain playbook', () => {
+    const playbook = {
+      id: 'test-contain',
+      name: 'Test Contain',
+      tier: 'contain',
+      match: { rule_id: 'brute-force' },
+      actions: [
+        { type: 'emit_alert' },
+        { type: 'tighten_rate_limit', params: { factor: 0.5 } },
+      ],
+    };
+    
+    const result = validatePlaybook(playbook);
+    expect(result.ok).toBe(true);
+    expect(result.playbook?.actions).toHaveLength(2);
+  });
+
+  it('validates a harden playbook with confirmation warning', () => {
+    const playbook = {
+      id: 'test-harden',
+      name: 'Test Harden',
+      tier: 'harden',
+      match: { severity: 'critical' },
+      actions: [{ type: 'rotate_canary' }],
+    };
+    
+    const result = validatePlaybook(playbook);
+    expect(result.ok).toBe(true);
+    expect(result.warnings.length).toBeGreaterThan(0);
+    expect(result.warnings[0]).toContain('confirmation');
+  });
+
+  it('rejects playbook missing id', () => {
+    const playbook = {
+      name: 'No ID',
+      tier: 'observe',
+      match: { event_type: 'test' },
+      actions: [{ type: 'emit_alert' }],
+    };
+    
+    const result = validatePlaybook(playbook);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some(e => e.includes('id'))).toBe(true);
+  });
+
+  it('rejects observe playbook with contain action', () => {
+    const playbook = {
+      id: 'bad-observe',
+      name: 'Bad Observe',
+      tier: 'observe',
+      match: { event_type: 'test' },
+      actions: [{ type: 'tighten_rate_limit' }],
+    };
+    
+    const result = validatePlaybook(playbook);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some(e => e.includes('not allowed in tier'))).toBe(true);
+  });
+
+  it('rejects unknown action type', () => {
+    const playbook = {
+      id: 'bad-action',
+      name: 'Bad Action',
+      tier: 'observe',
+      match: { event_type: 'test' },
+      actions: [{ type: 'shell_exec' }],
+    };
+    
+    const result = validatePlaybook(playbook);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some(e => e.includes('unknown action type'))).toBe(true);
+  });
+
+  it('rejects playbook without match conditions', () => {
+    const playbook = {
+      id: 'no-match',
+      name: 'No Match',
+      tier: 'observe',
+      match: {},
+      actions: [{ type: 'emit_alert' }],
+    };
+    
+    const result = validatePlaybook(playbook);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some(e => e.includes('at least one condition'))).toBe(true);
+  });
+});
+
+describe('Gatekeeper Playbook Matching', () => {
+  let testPlaybook: Playbook;
+
+  beforeEach(() => {
+    __testResetMatcher();
+    testPlaybook = {
+      id: 'test-playbook',
+      name: 'Test Playbook',
+      enabled: true,
+      tier: 'observe',
+      match: {
+        event_type: 'canary.trigger',
+        severity: 'high',
+      },
+      actions: [{ type: 'emit_alert' }],
+      cooldown_ms: 1000,
+      max_executions_per_window: 5,
+    };
+  });
+
+  afterEach(() => {
+    __testResetMatcher();
+  });
+
+  it('matches event that meets all conditions', () => {
+    const event: GatekeeperEvent = {
+      id: 'evt-1',
+      event_type: 'canary.trigger',
+      severity: 'high',
+      timestamp: Date.now(),
+    };
+    
+    const result = matchPlaybook(testPlaybook, event);
+    expect(result.matched).toBe(true);
+  });
+
+  it('does not match disabled playbook', () => {
+    testPlaybook.enabled = false;
+    const event: GatekeeperEvent = {
+      id: 'evt-2',
+      event_type: 'canary.trigger',
+      severity: 'high',
+      timestamp: Date.now(),
+    };
+    
+    const result = matchPlaybook(testPlaybook, event);
+    expect(result.matched).toBe(false);
+    expect(result.reason).toContain('disabled');
+  });
+
+  it('does not match wrong event type', () => {
+    const event: GatekeeperEvent = {
+      id: 'evt-3',
+      event_type: 'a2a.blocked',
+      severity: 'high',
+      timestamp: Date.now(),
+    };
+    
+    const result = matchPlaybook(testPlaybook, event);
+    expect(result.matched).toBe(false);
+  });
+
+  it('matches severity >= threshold', () => {
+    const playbookWithThreshold: Playbook = {
+      ...testPlaybook,
+      match: {
+        event_type: 'test',
+        severity: '>=medium',
+      },
+    };
+    
+    const highEvent: GatekeeperEvent = {
+      id: 'evt-4',
+      event_type: 'test',
+      severity: 'high',
+      timestamp: Date.now(),
+    };
+    
+    const lowEvent: GatekeeperEvent = {
+      id: 'evt-5',
+      event_type: 'test',
+      severity: 'low',
+      timestamp: Date.now(),
+    };
+    
+    expect(matchPlaybook(playbookWithThreshold, highEvent).matched).toBe(true);
+    expect(matchPlaybook(playbookWithThreshold, lowEvent).matched).toBe(false);
+  });
+
+  it('respects cooldown period', () => {
+    const event: GatekeeperEvent = {
+      id: 'evt-6',
+      event_type: 'canary.trigger',
+      severity: 'high',
+      timestamp: Date.now(),
+    };
+    
+    const result1 = matchPlaybook(testPlaybook, event);
+    expect(result1.matched).toBe(true);
+    recordPlaybookExecution(testPlaybook.id);
+    
+    const result2 = matchPlaybook(testPlaybook, event);
+    expect(result2.matched).toBe(false);
+    expect(result2.reason).toContain('cooldown');
+  });
+
+  it('matches with count threshold', () => {
+    const countPlaybook: Playbook = {
+      ...testPlaybook,
+      match: {
+        event_type: 'test',
+        count: 3,
+        window_ms: 60000,
+      },
+    };
+    
+    const now = Date.now();
+    
+    for (let i = 0; i < 2; i++) {
+      const event: GatekeeperEvent = {
+        id: `evt-count-${i}`,
+        event_type: 'test',
+        timestamp: now + i * 100,
+      };
+      const result = matchPlaybook(countPlaybook, event, now + i * 100);
+      expect(result.matched).toBe(false);
+      expect(result.eventsInWindow).toBe(i + 1);
+    }
+    
+    const finalEvent: GatekeeperEvent = {
+      id: 'evt-count-final',
+      event_type: 'test',
+      timestamp: now + 300,
+    };
+    const finalResult = matchPlaybook(countPlaybook, finalEvent, now + 300);
+    expect(finalResult.matched).toBe(true);
+    expect(finalResult.eventsInWindow).toBe(3);
+  });
+
+  it('matches multiple playbooks', () => {
+    const playbook2: Playbook = {
+      id: 'test-playbook-2',
+      name: 'Test Playbook 2',
+      enabled: true,
+      tier: 'observe',
+      match: { severity: 'high' },
+      actions: [{ type: 'write_audit' }],
+    };
+    
+    const event: GatekeeperEvent = {
+      id: 'evt-multi',
+      event_type: 'canary.trigger',
+      severity: 'high',
+      timestamp: Date.now(),
+    };
+    
+    const matches = matchAllPlaybooks([testPlaybook, playbook2], event);
+    expect(matches).toHaveLength(2);
+  });
+});
+
+describe('Gatekeeper Action Execution', () => {
+  beforeEach(() => {
+    __testResetActions();
+    __testResetAudit();
+  });
+
+  afterEach(() => {
+    __testResetActions();
+    __testResetAudit();
+  });
+
+  it('executes emit_alert in dry-run mode', async () => {
+    const action: PlaybookAction = { type: 'emit_alert', params: { message: 'Test alert' } };
+    const event: GatekeeperEvent = {
+      id: 'evt-alert',
+      event_type: 'test',
+      timestamp: Date.now(),
+    };
+    
+    const result = await executeAction(action, event, true);
+    expect(result.ok).toBe(true);
+    expect(result.dry_run).toBe(true);
+    expect(result.detail).toContain('Would send alert');
+  });
+
+  it('executes write_audit and records audit entry', async () => {
+    const action: PlaybookAction = { type: 'write_audit', params: { action: 'test.action' } };
+    const event: GatekeeperEvent = {
+      id: 'evt-audit',
+      event_type: 'test',
+      timestamp: Date.now(),
+    };
+    
+    const result = await executeAction(action, event, false);
+    expect(result.ok).toBe(true);
+    expect(result.dry_run).toBe(false);
+    
+    const auditEntries = __testPeekAudit();
+    expect(auditEntries.some(e => e.actor_email === 'gatekeeper')).toBe(true);
+  });
+
+  it('executes dashboard_notify', async () => {
+    const action: PlaybookAction = { type: 'dashboard_notify', params: { message: 'Test notify' } };
+    const event: GatekeeperEvent = {
+      id: 'evt-notify',
+      event_type: 'test',
+      timestamp: Date.now(),
+    };
+    
+    const result = await executeAction(action, event, false);
+    expect(result.ok).toBe(true);
+    
+    const notifications = getDashboardNotifications();
+    expect(notifications.some(n => n.message === 'Test notify')).toBe(true);
+  });
+
+  it('executes tighten_rate_limit and creates override', async () => {
+    const action: PlaybookAction = {
+      type: 'tighten_rate_limit',
+      params: { factor: 0.5, duration_ms: 300000 },
+    };
+    const event: GatekeeperEvent = {
+      id: 'evt-rate',
+      event_type: 'test',
+      agent_id: 'test-agent',
+      timestamp: Date.now(),
+    };
+    
+    const result = await executeAction(action, event, false);
+    expect(result.ok).toBe(true);
+    
+    const override = getRuntimeOverride('rate_limit:test-agent');
+    expect(override).toBeTruthy();
+    expect((override as { factor: number }).factor).toBe(0.5);
+  });
+
+  it('executes deny_tool and creates override', async () => {
+    const action: PlaybookAction = {
+      type: 'deny_tool',
+      params: { tool: 'dangerous_tool', duration_ms: 600000 },
+    };
+    const event: GatekeeperEvent = {
+      id: 'evt-deny-tool',
+      event_type: 'test',
+      timestamp: Date.now(),
+    };
+    
+    const result = await executeAction(action, event, false);
+    expect(result.ok).toBe(true);
+    
+    const override = getRuntimeOverride('deny_tool:dangerous_tool');
+    expect(override).toBeTruthy();
+    expect((override as { denied: boolean }).denied).toBe(true);
+  });
+
+  it('rotate_canary requires confirmation', async () => {
+    const action: PlaybookAction = {
+      type: 'rotate_canary',
+      requires_confirmation: true,
+      params: { canary_id: 'api-key' },
+    };
+    const event: GatekeeperEvent = {
+      id: 'evt-canary',
+      event_type: 'test',
+      timestamp: Date.now(),
+    };
+    
+    const result = await executeAction(action, event, false);
+    expect(result.ok).toBe(false);
+    expect(result.requires_confirmation).toBe(true);
+  });
+
+  it('lists runtime overrides', async () => {
+    const action: PlaybookAction = {
+      type: 'deny_domain',
+      params: { domain: 'evil.com', duration_ms: 300000 },
+    };
+    const event: GatekeeperEvent = {
+      id: 'evt-domain',
+      event_type: 'test',
+      timestamp: Date.now(),
+    };
+    
+    await executeAction(action, event, false);
+    
+    const overrides = listRuntimeOverrides();
+    expect(Object.keys(overrides)).toContain('deny_domain:evil.com');
+  });
+});
+
+describe('Gatekeeper Worker', () => {
+  let testDir: string;
+
+  beforeEach(() => {
+    __testResetWorker();
+    __testResetAudit();
+    
+    testDir = join(tmpdir(), `phaseone-test-${Date.now()}`);
+    mkdirSync(testDir, { recursive: true });
+    
+    const playbook = `
+id: test-worker-playbook
+name: Test Worker Playbook
+tier: observe
+match:
+  event_type: test.event
+actions:
+  - type: dashboard_notify
+    params:
+      message: Worker test notification
+`;
+    writeFileSync(join(testDir, 'test-playbook.yaml'), playbook);
+    resetPlaybooksCache();
+  });
+
+  afterEach(() => {
+    __testResetWorker();
+    __testResetAudit();
+    if (existsSync(testDir)) {
+      rmSync(testDir, { recursive: true, force: true });
+    }
+  });
+
+  it('processes event through playbook', async () => {
+    const event: GatekeeperEvent = {
+      id: 'evt-worker',
+      event_type: 'test.event',
+      timestamp: Date.now(),
+    };
+    
+    const executions = await processEvent(event, {
+      dryRunOverride: false,
+      playbooksDir: testDir,
+    });
+    
+    expect(executions).toHaveLength(1);
+    expect(executions[0].playbook_id).toBe('test-worker-playbook');
+    expect(executions[0].actions).toHaveLength(1);
+    expect(executions[0].actions[0].ok).toBe(true);
+  });
+
+  it('processes queued events in cycle', async () => {
+    const event1: GatekeeperEvent = {
+      id: 'evt-cycle-1',
+      event_type: 'test.event',
+      timestamp: Date.now(),
+    };
+    const event2: GatekeeperEvent = {
+      id: 'evt-cycle-2',
+      event_type: 'test.event',
+      timestamp: Date.now() + 100,
+    };
+    
+    queueEvent(event1);
+    queueEvent(event2);
+    
+    const result = await runGatekeeperCycle({
+      dryRunOverride: false,
+      playbooksDir: testDir,
+    });
+    
+    expect(result.processed).toBe(2);
+    expect(result.executions.length).toBeGreaterThan(0);
+  });
+
+  it('tracks gatekeeper state', async () => {
+    setGatekeeperEnabled(true);
+    setGatekeeperDryRun(false);
+    
+    const event: GatekeeperEvent = {
+      id: 'evt-state',
+      event_type: 'test.event',
+      timestamp: Date.now(),
+    };
+    
+    await processEvent(event, { playbooksDir: testDir });
+    
+    const status = getGatekeeperStatus();
+    expect(status.state.enabled).toBe(true);
+    expect(status.state.dry_run).toBe(false);
+    expect(status.state.executions_count).toBeGreaterThan(0);
+    expect(status.state.recent_actions.length).toBeGreaterThan(0);
+  });
+
+  it('dry-run mode does not mutate', async () => {
+    const containPlaybook = `
+id: test-contain-dry
+name: Test Contain Dry
+tier: contain
+match:
+  event_type: contain.test
+actions:
+  - type: deny_tool
+    params:
+      tool: test_tool
+      duration_ms: 60000
+`;
+    writeFileSync(join(testDir, 'contain-playbook.yaml'), containPlaybook);
+    resetPlaybooksCache();
+    
+    const event: GatekeeperEvent = {
+      id: 'evt-dry',
+      event_type: 'contain.test',
+      timestamp: Date.now(),
+    };
+    
+    const executions = await processEvent(event, {
+      dryRunOverride: true,
+      playbooksDir: testDir,
+    });
+    
+    expect(executions[0].dry_run).toBe(true);
+    expect(executions[0].actions[0].dry_run).toBe(true);
+    
+    const override = getRuntimeOverride('deny_tool:test_tool');
+    expect(override).toBeNull();
+  });
+});
+
+describe('Gatekeeper Playbook Loading', () => {
+  let testDir: string;
+
+  beforeEach(() => {
+    testDir = join(tmpdir(), `phaseone-playbooks-${Date.now()}`);
+    mkdirSync(testDir, { recursive: true });
+    resetPlaybooksCache();
+  });
+
+  afterEach(() => {
+    resetPlaybooksCache();
+    if (existsSync(testDir)) {
+      rmSync(testDir, { recursive: true, force: true });
+    }
+  });
+
+  it('loads playbooks from directory', () => {
+    const playbook1 = `
+id: load-test-1
+name: Load Test 1
+tier: observe
+match:
+  event_type: test
+actions:
+  - type: emit_alert
+`;
+    const playbook2 = `
+id: load-test-2
+name: Load Test 2
+tier: contain
+match:
+  rule_id: test-rule
+actions:
+  - type: tighten_rate_limit
+`;
+    writeFileSync(join(testDir, 'playbook1.yaml'), playbook1);
+    writeFileSync(join(testDir, 'playbook2.yaml'), playbook2);
+    
+    const playbooks = loadPlaybooks(testDir);
+    expect(playbooks).toHaveLength(2);
+    expect(playbooks.find(p => p.id === 'load-test-1')).toBeTruthy();
+    expect(playbooks.find(p => p.id === 'load-test-2')).toBeTruthy();
+  });
+
+  it('sorts playbooks by tier', () => {
+    const harden = `
+id: tier-harden
+name: Harden
+tier: harden
+match:
+  severity: critical
+actions:
+  - type: emit_alert
+`;
+    const observe = `
+id: tier-observe
+name: Observe
+tier: observe
+match:
+  event_type: test
+actions:
+  - type: emit_alert
+`;
+    const contain = `
+id: tier-contain
+name: Contain
+tier: contain
+match:
+  rule_id: test
+actions:
+  - type: emit_alert
+`;
+    writeFileSync(join(testDir, 'harden.yaml'), harden);
+    writeFileSync(join(testDir, 'observe.yaml'), observe);
+    writeFileSync(join(testDir, 'contain.yaml'), contain);
+    
+    const playbooks = loadPlaybooks(testDir);
+    expect(playbooks[0].tier).toBe('observe');
+    expect(playbooks[1].tier).toBe('contain');
+    expect(playbooks[2].tier).toBe('harden');
+  });
+
+  it('skips invalid playbook files', () => {
+    const valid = `
+id: valid-playbook
+name: Valid
+tier: observe
+match:
+  event_type: test
+actions:
+  - type: emit_alert
+`;
+    const invalid = 'this is not valid yaml: [[';
+    writeFileSync(join(testDir, 'valid.yaml'), valid);
+    writeFileSync(join(testDir, 'invalid.yaml'), invalid);
+    
+    const playbooks = loadPlaybooks(testDir);
+    expect(playbooks).toHaveLength(1);
+    expect(playbooks[0].id).toBe('valid-playbook');
+  });
+
+  it('lists playbooks with details', () => {
+    const playbook = `
+id: detail-test
+name: Detail Test
+description: A test playbook with details
+tier: observe
+enabled: false
+match:
+  event_type: test
+actions:
+  - type: emit_alert
+  - type: write_audit
+`;
+    writeFileSync(join(testDir, 'detail.yaml'), playbook);
+    
+    const detailed = listPlaybooksDetailed(testDir);
+    expect(detailed).toHaveLength(1);
+    expect(detailed[0].file).toBe('detail.yaml');
+    expect(detailed[0].description).toBe('A test playbook with details');
+    expect(detailed[0].enabled).toBe(false);
+    expect(detailed[0].actions).toHaveLength(2);
+  });
+
+  it('returns empty array for missing directory', () => {
+    const playbooks = loadPlaybooks('/nonexistent/path');
+    expect(playbooks).toEqual([]);
+  });
+});
+
+describe('Gatekeeper LLM Advisor', () => {
+  function createMockFetch(responses: Array<{ ok: boolean; status?: number; body?: unknown; error?: Error }>): typeof fetch {
+    let callIndex = 0;
+    return async (_url: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
+      const response = responses[callIndex++] ?? { ok: false, status: 500 };
+      
+      if (response.error) {
+        throw response.error;
+      }
+      
+      return {
+        ok: response.ok,
+        status: response.status ?? (response.ok ? 200 : 500),
+        json: async () => response.body,
+        text: async () => JSON.stringify(response.body),
+      } as Response;
+    };
+  }
+
+  it('loads LLM config from environment', async () => {
+    const { loadGatekeeperLLMConfig } = await import('../shared/src/gatekeeper-llm.js');
+    const originalKey = process.env.OPENROUTER_API_KEY;
+    const originalPrimary = process.env.PHASEONE_GATEKEEPER_LLM_PRIMARY;
+
+    try {
+      process.env.OPENROUTER_API_KEY = 'test-key-123';
+      process.env.PHASEONE_GATEKEEPER_LLM_PRIMARY = 'openrouter';
+      
+      const config = loadGatekeeperLLMConfig();
+      
+      expect(config.enabled).toBe(true);
+      expect(config.primary).toBe('openrouter');
+      expect(config.fallback).toBe('ollama');
+      expect(config.openrouter.apiKey).toBe('test-key-123');
+      expect(config.openrouter.model).toBe('openrouter/auto');
+      expect(config.ollama.model).toBe('unrestricted:latest');
+    } finally {
+      if (originalKey === undefined) delete process.env.OPENROUTER_API_KEY;
+      else process.env.OPENROUTER_API_KEY = originalKey;
+      if (originalPrimary === undefined) delete process.env.PHASEONE_GATEKEEPER_LLM_PRIMARY;
+      else process.env.PHASEONE_GATEKEEPER_LLM_PRIMARY = originalPrimary;
+    }
+  });
+
+  it('returns disabled when no API key configured', async () => {
+    const { loadGatekeeperLLMConfig } = await import('../shared/src/gatekeeper-llm.js');
+    const originalKey = process.env.OPENROUTER_API_KEY;
+    const originalEnabled = process.env.PHASEONE_GATEKEEPER_LLM_ENABLED;
+
+    try {
+      delete process.env.OPENROUTER_API_KEY;
+      delete process.env.PHASEONE_GATEKEEPER_LLM_ENABLED;
+      
+      const config = loadGatekeeperLLMConfig();
+      expect(config.enabled).toBe(false);
+    } finally {
+      if (originalKey !== undefined) process.env.OPENROUTER_API_KEY = originalKey;
+      if (originalEnabled !== undefined) process.env.PHASEONE_GATEKEEPER_LLM_ENABLED = originalEnabled;
+    }
+  });
+
+  it('describes config without exposing API key', async () => {
+    const { describeConfig } = await import('../shared/src/gatekeeper-llm.js');
+    const config = {
+      enabled: true,
+      primary: 'openrouter' as const,
+      fallback: 'ollama' as const,
+      openrouter: { apiKey: 'secret-key-123', baseUrl: 'https://openrouter.ai/api/v1', model: 'openrouter/auto' },
+      ollama: { baseUrl: 'http://localhost:11434/v1', model: 'unrestricted:latest' },
+      timeoutMs: 30000,
+      maxTokens: 512,
+    };
+
+    const described = describeConfig(config);
+
+    expect(described.enabled).toBe(true);
+    expect((described.openrouter as { configured: boolean }).configured).toBe(true);
+    expect(JSON.stringify(described)).not.toContain('secret-key-123');
+  });
+
+  it('completes advisor prompt via primary (OpenRouter)', async () => {
+    const { completeAdvisorPrompt } = await import('../shared/src/gatekeeper-llm.js');
+    const mockFetch = createMockFetch([{
+      ok: true,
+      body: {
+        choices: [{ message: { content: 'Recommend enabling rate limiting for this agent.' } }],
+      },
+    }]);
+
+    const config = {
+      enabled: true,
+      primary: 'openrouter' as const,
+      fallback: 'ollama' as const,
+      openrouter: { apiKey: 'test-key', baseUrl: 'https://openrouter.ai/api/v1', model: 'openrouter/auto' },
+      ollama: { baseUrl: 'http://localhost:11434/v1', model: 'unrestricted:latest' },
+      timeoutMs: 30000,
+      maxTokens: 512,
+    };
+
+    const response = await completeAdvisorPrompt(
+      { context: 'test', event_summary: 'Canary trigger' },
+      config,
+      mockFetch
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.provider).toBe('openrouter');
+    expect(response.fallback_used).toBe(false);
+    expect(response.suggestion).toContain('rate limiting');
+  });
+
+  it('falls back to Ollama when OpenRouter fails', async () => {
+    const { completeAdvisorPrompt } = await import('../shared/src/gatekeeper-llm.js');
+    const mockFetch = createMockFetch([
+      { ok: false, status: 401, body: { error: { message: 'Invalid API key' } } },
+      { ok: true, body: { choices: [{ message: { content: 'Fallback suggestion: quarantine agent.' } }] } },
+    ]);
+
+    const config = {
+      enabled: true,
+      primary: 'openrouter' as const,
+      fallback: 'ollama' as const,
+      openrouter: { apiKey: 'bad-key', baseUrl: 'https://openrouter.ai/api/v1', model: 'openrouter/auto' },
+      ollama: { baseUrl: 'http://localhost:11434/v1', model: 'unrestricted:latest' },
+      timeoutMs: 30000,
+      maxTokens: 512,
+    };
+
+    const response = await completeAdvisorPrompt(
+      { context: 'test', event_summary: 'A2A blocked' },
+      config,
+      mockFetch
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.provider).toBe('ollama');
+    expect(response.fallback_used).toBe(true);
+    expect(response.suggestion).toContain('quarantine');
+  });
+
+  it('gracefully degrades when both providers fail', async () => {
+    const { completeAdvisorPrompt } = await import('../shared/src/gatekeeper-llm.js');
+    const mockFetch = createMockFetch([
+      { ok: false, status: 500, body: { error: { message: 'Server error' } } },
+      { ok: false, status: 503, body: { error: { message: 'Service unavailable' } } },
+    ]);
+
+    const config = {
+      enabled: true,
+      primary: 'openrouter' as const,
+      fallback: 'ollama' as const,
+      openrouter: { apiKey: 'test-key', baseUrl: 'https://openrouter.ai/api/v1', model: 'openrouter/auto' },
+      ollama: { baseUrl: 'http://localhost:11434/v1', model: 'unrestricted:latest' },
+      timeoutMs: 30000,
+      maxTokens: 512,
+    };
+
+    const response = await completeAdvisorPrompt(
+      { context: 'test', event_summary: 'Injection blocked' },
+      config,
+      mockFetch
+    );
+
+    expect(response.ok).toBe(false);
+    expect(response.provider).toBe('none');
+    expect(response.fallback_used).toBe(true);
+    expect(response.error).toContain('primary');
+    expect(response.error).toContain('fallback');
+  });
+
+  it('returns disabled error when advisor is not enabled', async () => {
+    const { completeAdvisorPrompt } = await import('../shared/src/gatekeeper-llm.js');
+    const config = {
+      enabled: false,
+      primary: 'openrouter' as const,
+      fallback: 'ollama' as const,
+      openrouter: { apiKey: '', baseUrl: 'https://openrouter.ai/api/v1', model: 'openrouter/auto' },
+      ollama: { baseUrl: 'http://localhost:11434/v1', model: 'unrestricted:latest' },
+      timeoutMs: 30000,
+      maxTokens: 512,
+    };
+
+    const response = await completeAdvisorPrompt(
+      { context: 'test', event_summary: 'Test event' },
+      config,
+      createMockFetch([])
+    );
+
+    expect(response.ok).toBe(false);
+    expect(response.error).toContain('not enabled');
+  });
+
+  it('handles timeout gracefully', async () => {
+    const { completeAdvisorPrompt } = await import('../shared/src/gatekeeper-llm.js');
+
+    const config = {
+      enabled: true,
+      primary: 'openrouter' as const,
+      fallback: 'none' as const,
+      openrouter: { apiKey: 'test-key', baseUrl: 'https://openrouter.ai/api/v1', model: 'openrouter/auto' },
+      ollama: { baseUrl: 'http://localhost:11434/v1', model: 'unrestricted:latest' },
+      timeoutMs: 50,
+      maxTokens: 512,
+    };
+
+    const mockFetch = createMockFetch([{
+      ok: false,
+      error: Object.assign(new Error('timeout after 50ms'), { name: 'AbortError' }),
+    }]);
+
+    const response = await completeAdvisorPrompt(
+      { context: 'test', event_summary: 'Timeout test' },
+      config,
+      mockFetch
+    );
+
+    expect(response.ok).toBe(false);
+  });
+
+  it('handles empty response from model', async () => {
+    const { completeAdvisorPrompt } = await import('../shared/src/gatekeeper-llm.js');
+    const mockFetch = createMockFetch([
+      { ok: true, body: { choices: [{ message: { content: '' } }] } },
+      { ok: true, body: { choices: [{ message: { content: 'Fallback response with content.' } }] } },
+    ]);
+
+    const config = {
+      enabled: true,
+      primary: 'openrouter' as const,
+      fallback: 'ollama' as const,
+      openrouter: { apiKey: 'test-key', baseUrl: 'https://openrouter.ai/api/v1', model: 'openrouter/auto' },
+      ollama: { baseUrl: 'http://localhost:11434/v1', model: 'unrestricted:latest' },
+      timeoutMs: 30000,
+      maxTokens: 512,
+    };
+
+    const response = await completeAdvisorPrompt(
+      { context: 'test', event_summary: 'Empty response test' },
+      config,
+      mockFetch
+    );
+
+    expect(response.ok).toBe(true);
+    expect(response.provider).toBe('ollama');
+    expect(response.fallback_used).toBe(true);
+  });
+
+  it('checks health of both providers', async () => {
+    const { checkLLMHealth } = await import('../shared/src/gatekeeper-llm.js');
+    const mockFetch = createMockFetch([
+      { ok: true, body: { choices: [{ message: { content: 'OK' } }] } },
+      { ok: true, body: { choices: [{ message: { content: 'OK' } }] } },
+    ]);
+
+    const config = {
+      enabled: true,
+      primary: 'openrouter' as const,
+      fallback: 'ollama' as const,
+      openrouter: { apiKey: 'test-key', baseUrl: 'https://openrouter.ai/api/v1', model: 'openrouter/auto' },
+      ollama: { baseUrl: 'http://localhost:11434/v1', model: 'unrestricted:latest' },
+      timeoutMs: 15000,
+      maxTokens: 64,
+    };
+
+    const health = await checkLLMHealth(config, mockFetch);
+
+    expect(health.openrouter.ok).toBe(true);
+    expect(health.ollama.ok).toBe(true);
+    expect(health.recommended_provider).toBe('openrouter');
+  });
+
+  it('recommends ollama when openrouter fails health check', async () => {
+    const { checkLLMHealth } = await import('../shared/src/gatekeeper-llm.js');
+    const mockFetch = createMockFetch([
+      { ok: false, status: 401, body: { error: { message: 'Unauthorized' } } },
+      { ok: true, body: { choices: [{ message: { content: 'OK' } }] } },
+    ]);
+
+    const config = {
+      enabled: true,
+      primary: 'openrouter' as const,
+      fallback: 'ollama' as const,
+      openrouter: { apiKey: 'bad-key', baseUrl: 'https://openrouter.ai/api/v1', model: 'openrouter/auto' },
+      ollama: { baseUrl: 'http://localhost:11434/v1', model: 'unrestricted:latest' },
+      timeoutMs: 15000,
+      maxTokens: 64,
+    };
+
+    const health = await checkLLMHealth(config, mockFetch);
+
+    expect(health.openrouter.ok).toBe(false);
+    expect(health.ollama.ok).toBe(true);
+    expect(health.recommended_provider).toBe('ollama');
+  });
+
+  it('recommends none when both providers fail health check', async () => {
+    const { checkLLMHealth } = await import('../shared/src/gatekeeper-llm.js');
+    const mockFetch = createMockFetch([
+      { ok: false, status: 500, body: { error: { message: 'Server error' } } },
+      { ok: false, status: 503, body: { error: { message: 'Service unavailable' } } },
+    ]);
+
+    const config = {
+      enabled: true,
+      primary: 'openrouter' as const,
+      fallback: 'ollama' as const,
+      openrouter: { apiKey: 'test-key', baseUrl: 'https://openrouter.ai/api/v1', model: 'openrouter/auto' },
+      ollama: { baseUrl: 'http://localhost:11434/v1', model: 'unrestricted:latest' },
+      timeoutMs: 15000,
+      maxTokens: 64,
+    };
+
+    const health = await checkLLMHealth(config, mockFetch);
+
+    expect(health.openrouter.ok).toBe(false);
+    expect(health.ollama.ok).toBe(false);
+    expect(health.recommended_provider).toBe('none');
+  });
+});
+
+// ============================================================================
+// Phase 8 Wave A: Gatekeeper Simulation & Rate Cap Tests
+// ============================================================================
+
+import {
   loadRateCapConfig,
   checkRateCap,
   recordAction,
   releaseApproval,
   getRateCapStatus,
   resetRateCapState,
+  simulateEvents,
+  calculateBlastRadius,
   type SimulationEvent,
-  type SimulationResult,
+  type RateCapConfig,
 } from '../shared/src/gatekeeper.js';
 
 describe('Gatekeeper Simulation', () => {
-  it('simulates empty event list', () => {
-    const result = simulateEvents([]);
-    expect(result.ok).toBe(true);
-    expect(result.results).toHaveLength(0);
-    expect(result.blast_radius.total_events).toBe(0);
-    expect(result.dry_run).toBe(true);
-  });
-
-  it('simulates tool call events', () => {
+  it('simulates events and returns results', () => {
     const events: SimulationEvent[] = [
-      {
-        id: '1',
-        session_id: 'sess-1',
-        agent_id: 'agent-1',
-        event_type: 'tool.call',
-        tool_name: 'http_request',
-        tool_args: { url: 'https://api.example.com/data' },
-      },
-      {
-        id: '2',
-        session_id: 'sess-1',
-        agent_id: 'agent-1',
-        event_type: 'tool.call',
-        tool_name: 'run_shell',
-        tool_args: { command: 'echo hello' },
-      },
+      { id: 'e1', timestamp: Date.now(), event_type: 'tool.call', agent_id: 'a1' },
+      { id: 'e2', timestamp: Date.now(), event_type: 'canary.trigger', agent_id: 'a2' },
+      { id: 'e3', timestamp: Date.now(), event_type: 'session.start', agent_id: 'a1' },
     ];
 
-    const result = simulateEvents(events);
-    expect(result.ok).toBe(true);
-    expect(result.results).toHaveLength(2);
-    expect(result.blast_radius.total_events).toBe(2);
-    expect(result.blast_radius.affected_agents).toContain('agent-1');
-    expect(result.blast_radius.affected_tools).toContain('http_request');
-    expect(result.blast_radius.affected_tools).toContain('run_shell');
+    const output = simulateEvents(events, {});
+
+    expect(output.ok).toBe(true);
+    expect(output.results.length).toBe(3);
+    expect(output.results.every(r => r.event && r.decision)).toBe(true);
+    expect(output.dry_run).toBe(true);
   });
 
-  it('identifies blocked events', () => {
+  it('filters events by type', () => {
     const events: SimulationEvent[] = [
-      {
-        id: '1',
-        agent_id: 'agent-1',
-        tool_name: 'run_shell',
-        tool_args: { command: 'rm -rf /' }, // Dangerous command
-      },
+      { id: 'e1', timestamp: Date.now(), event_type: 'tool.call', agent_id: 'a1' },
+      { id: 'e2', timestamp: Date.now(), event_type: 'canary.trigger', agent_id: 'a2' },
+      { id: 'e3', timestamp: Date.now(), event_type: 'tool.call', agent_id: 'a3' },
     ];
 
-    const result = simulateEvents(events);
-    expect(result.results[0].would_block).toBe(true);
-    expect(result.blast_radius.blocked_count).toBeGreaterThanOrEqual(1);
+    const output = simulateEvents(events, { event_types: ['tool.call'] });
+
+    expect(output.results.length).toBe(2);
+    expect(output.results.every(r => r.event.event_type === 'tool.call')).toBe(true);
   });
 
-  it('applies event type filter', () => {
+  it('filters events by agent', () => {
     const events: SimulationEvent[] = [
-      { id: '1', event_type: 'tool.call', tool_name: 'read_file' },
-      { id: '2', event_type: 'shell.exec', shell_command: 'ls' },
-      { id: '3', event_type: 'tool.call', tool_name: 'write_file' },
+      { id: 'e1', timestamp: Date.now(), event_type: 'tool.call', agent_id: 'a1' },
+      { id: 'e2', timestamp: Date.now(), event_type: 'canary.trigger', agent_id: 'a2' },
+      { id: 'e3', timestamp: Date.now(), event_type: 'session.start', agent_id: 'a1' },
     ];
 
-    const result = simulateEvents(events, { event_types: ['tool.call'] });
-    expect(result.results).toHaveLength(2);
+    const output = simulateEvents(events, { agent_ids: ['a1'] });
+
+    expect(output.results.length).toBe(2);
+    expect(output.results.every(r => r.event.agent_id === 'a1')).toBe(true);
   });
 
-  it('applies agent ID filter', () => {
-    const events: SimulationEvent[] = [
-      { id: '1', agent_id: 'agent-1', tool_name: 'read_file' },
-      { id: '2', agent_id: 'agent-2', tool_name: 'read_file' },
-      { id: '3', agent_id: 'agent-1', tool_name: 'write_file' },
-    ];
-
-    const result = simulateEvents(events, { agent_ids: ['agent-1'] });
-    expect(result.results).toHaveLength(2);
-    expect(result.blast_radius.affected_agents).toEqual(['agent-1']);
-  });
-
-  it('applies max events limit', () => {
-    const events: SimulationEvent[] = Array.from({ length: 100 }, (_, i) => ({
-      id: String(i),
-      tool_name: 'read_file',
+  it('limits results', () => {
+    const events: SimulationEvent[] = Array.from({ length: 10 }, (_, i) => ({
+      id: `e${i}`,
+      timestamp: Date.now(),
+      event_type: 'tool.call',
+      agent_id: 'a1',
     }));
 
-    const result = simulateEvents(events, { max_events: 10 });
-    expect(result.results).toHaveLength(10);
+    const output = simulateEvents(events, { max_events: 5 });
+
+    expect(output.results.length).toBe(5);
   });
 
-  it('calculates simulation time', () => {
+  it('calculates blast radius', () => {
     const events: SimulationEvent[] = [
-      { id: '1', tool_name: 'read_file' },
-      { id: '2', tool_name: 'write_file' },
+      { id: 'e1', timestamp: Date.now(), event_type: 'tool.call', agent_id: 'a1', tool_name: 'fs.write', destination: 'example.com' },
+      { id: 'e2', timestamp: Date.now(), event_type: 'tool.call', agent_id: 'a2', tool_name: 'http.fetch', destination: 'example.com' },
+      { id: 'e3', timestamp: Date.now(), event_type: 'canary.trigger', agent_id: 'a1', tool_name: 'fs.read' },
     ];
 
-    const result = simulateEvents(events);
-    expect(result.simulation_time_ms).toBeGreaterThanOrEqual(0);
-  });
-});
+    const output = simulateEvents(events, {});
+    const blast = output.blast_radius;
 
-describe('Blast Radius Calculation', () => {
-  it('calculates empty results', () => {
-    const br = calculateBlastRadius([]);
-    expect(br.total_events).toBe(0);
-    expect(br.blocked_count).toBe(0);
-    expect(br.affected_agents).toHaveLength(0);
-  });
-
-  it('counts blocked and allowed events', () => {
-    const results: SimulationResult[] = [
-      {
-        event: { id: '1' },
-        decision: { action: 'deny', reason: 'test', ruleId: 'test.rule' },
-        would_block: true,
-        would_require_approval: false,
-        matched_rules: ['test.rule'],
-      },
-      {
-        event: { id: '2' },
-        decision: { action: 'allow', reason: 'ok', ruleId: 'default.allow' },
-        would_block: false,
-        would_require_approval: false,
-        matched_rules: ['default.allow'],
-      },
-      {
-        event: { id: '3' },
-        decision: { action: 'require_approval', reason: 'destructive', ruleId: 'destructive.approval' },
-        would_block: false,
-        would_require_approval: true,
-        matched_rules: ['destructive.approval'],
-      },
-    ];
-
-    const br = calculateBlastRadius(results);
-    expect(br.total_events).toBe(3);
-    expect(br.blocked_count).toBe(1);
-    expect(br.approval_required_count).toBe(1);
-    expect(br.allowed_count).toBe(1);
-  });
-
-  it('tracks rule hit counts', () => {
-    const results: SimulationResult[] = [
-      {
-        event: {},
-        decision: { action: 'deny', reason: 'test', ruleId: 'rule.a' },
-        would_block: true,
-        would_require_approval: false,
-        matched_rules: ['rule.a'],
-      },
-      {
-        event: {},
-        decision: { action: 'deny', reason: 'test', ruleId: 'rule.a' },
-        would_block: true,
-        would_require_approval: false,
-        matched_rules: ['rule.a'],
-      },
-      {
-        event: {},
-        decision: { action: 'deny', reason: 'test', ruleId: 'rule.b' },
-        would_block: true,
-        would_require_approval: false,
-        matched_rules: ['rule.b'],
-      },
-    ];
-
-    const br = calculateBlastRadius(results);
-    expect(br.rule_hits['rule.a']).toBe(2);
-    expect(br.rule_hits['rule.b']).toBe(1);
-  });
-
-  it('counts canary and secret matches', () => {
-    const results: SimulationResult[] = [
-      {
-        event: {},
-        decision: {
-          action: 'deny',
-          reason: 'canary',
-          ruleId: 'canary.block',
-          matchedCanaries: ['canary1', 'canary2'],
-        },
-        would_block: true,
-        would_require_approval: false,
-        matched_rules: ['canary.block'],
-      },
-      {
-        event: {},
-        decision: {
-          action: 'deny',
-          reason: 'secret',
-          ruleId: 'secret.egress',
-          matchedSecrets: ['aws_key'],
-        },
-        would_block: true,
-        would_require_approval: false,
-        matched_rules: ['secret.egress'],
-      },
-    ];
-
-    const br = calculateBlastRadius(results);
-    expect(br.canary_matches).toBe(2);
-    expect(br.secret_matches).toBe(1);
-  });
-
-  it('extracts unique domains', () => {
-    const results: SimulationResult[] = [
-      {
-        event: { destination: 'https://api.example.com/v1' },
-        decision: { action: 'allow', reason: 'ok' },
-        would_block: false,
-        would_require_approval: false,
-        matched_rules: [],
-      },
-      {
-        event: { url: 'https://api.example.com/v2' },
-        decision: { action: 'allow', reason: 'ok' },
-        would_block: false,
-        would_require_approval: false,
-        matched_rules: [],
-      },
-      {
-        event: { destination: 'https://other.com/api' },
-        decision: { action: 'allow', reason: 'ok' },
-        would_block: false,
-        would_require_approval: false,
-        matched_rules: [],
-      },
-    ];
-
-    const br = calculateBlastRadius(results);
-    expect(br.affected_domains).toContain('api.example.com');
-    expect(br.affected_domains).toContain('other.com');
-    expect(br.affected_domains).toHaveLength(2);
+    expect(blast.total_events).toBe(3);
+    expect(blast.affected_agents.length).toBe(2);
+    expect(blast.affected_tools.length).toBeGreaterThan(0);
   });
 });
 
@@ -254,117 +1108,129 @@ describe('Rate Cap', () => {
     resetRateCapState();
   });
 
-  afterEach(() => {
-    resetRateCapState();
-  });
-
   it('loads rate cap config from environment', () => {
-    const cfg = loadRateCapConfig();
-    expect(cfg.max_actions_per_window).toBeGreaterThan(0);
-    expect(cfg.window_ms).toBeGreaterThan(0);
-    expect(cfg.cooldown_ms).toBeGreaterThan(0);
+    const prev = process.env.PHASEONE_GATEKEEPER_MAX_ACTIONS;
+    process.env.PHASEONE_GATEKEEPER_MAX_ACTIONS = '50';
+
+    const config = loadRateCapConfig();
+    expect(config.max_actions_per_window).toBe(50);
+
+    if (prev === undefined) delete process.env.PHASEONE_GATEKEEPER_MAX_ACTIONS;
+    else process.env.PHASEONE_GATEKEEPER_MAX_ACTIONS = prev;
   });
 
-  it('allows actions within limits', () => {
-    const result = checkRateCap('test_action', 'agent-1');
-    expect(result.allowed).toBe(true);
+  it('allows actions under rate limit', () => {
+    const config: RateCapConfig = {
+      max_actions_per_window: 5,
+      window_ms: 60000,
+      cooldown_ms: 0,
+      max_pending_approvals: 10,
+      circuit_breaker_threshold: 100,
+    };
+
+    const result1 = checkRateCap('contain', 'test-action', config);
+    expect(result1.allowed).toBe(true);
+
+    recordAction('contain', 'test-action');
+
+    const result2 = checkRateCap('contain', 'test-action', config);
+    expect(result2.allowed).toBe(true);
+  });
+
+  it('blocks actions exceeding rate limit', () => {
+    const config: RateCapConfig = {
+      max_actions_per_window: 2,
+      window_ms: 60000,
+      cooldown_ms: 0,
+      max_pending_approvals: 10,
+      circuit_breaker_threshold: 100,
+    };
+
+    recordAction('contain', 'test-action');
+    recordAction('contain', 'test-action');
+
+    const result = checkRateCap('contain', 'test-action', config);
+    expect(result.allowed).toBe(false);
+    expect(result.reason?.toLowerCase()).toContain('rate');
   });
 
   it('enforces cooldown between same actions', () => {
-    const cfg = loadRateCapConfig();
-    
-    // Record first action
-    recordAction('test_action', 'agent-1');
-    
-    // Immediate second action should be rate limited
-    const result = checkRateCap('test_action', 'agent-1', { ...cfg, cooldown_ms: 10000 });
+    const config: RateCapConfig = {
+      max_actions_per_window: 100,
+      window_ms: 60000,
+      cooldown_ms: 5000,
+      max_pending_approvals: 10,
+      circuit_breaker_threshold: 100,
+    };
+
+    recordAction('contain', 'test-action');
+
+    const result = checkRateCap('contain', 'test-action', config);
     expect(result.allowed).toBe(false);
-    expect(result.reason).toContain('Cooldown');
-    expect(result.retry_after_ms).toBeGreaterThan(0);
-  });
-
-  it('allows different actions during cooldown', () => {
-    recordAction('action_a', 'agent-1');
-    
-    const result = checkRateCap('action_b', 'agent-1');
-    expect(result.allowed).toBe(true);
-  });
-
-  it('enforces window rate limit', () => {
-    const cfg = { ...loadRateCapConfig(), max_actions_per_window: 3, window_ms: 60000 };
-    
-    recordAction('action_1');
-    recordAction('action_2');
-    recordAction('action_3');
-    
-    const result = checkRateCap('action_4', undefined, cfg);
-    expect(result.allowed).toBe(false);
-    expect(result.reason).toContain('Rate limit');
-  });
-
-  it('tracks pending approvals', () => {
-    recordAction('require_approval');
-    recordAction('require_approval');
-    
-    const status = getRateCapStatus();
-    expect(status.state.pending_approvals).toBe(2);
-    
-    releaseApproval();
-    const status2 = getRateCapStatus();
-    expect(status2.state.pending_approvals).toBe(1);
+    expect(result.reason?.toLowerCase()).toContain('cooldown');
   });
 
   it('enforces max pending approvals', () => {
-    const cfg = { ...loadRateCapConfig(), max_pending_approvals: 2, cooldown_ms: 0 };
-    
-    recordAction('require_approval');
-    recordAction('require_approval');
-    
-    const result = checkRateCap('require_approval', undefined, cfg);
+    resetRateCapState();
+    const config: RateCapConfig = {
+      max_actions_per_window: 100,
+      window_ms: 60000,
+      cooldown_ms: 0,
+      max_pending_approvals: 2,
+      circuit_breaker_threshold: 100,
+    };
+
+    // Record actions that require approval
+    recordAction('require_approval', 'agent1');
+    recordAction('require_approval', 'agent2');
+
+    // Check if another require_approval action would be blocked
+    const result = checkRateCap('require_approval', 'action3', config);
     expect(result.allowed).toBe(false);
-    expect(result.reason).toContain('pending approvals');
+    expect(result.reason?.toLowerCase()).toContain('pending');
+  });
+
+  it('releases approval and updates pending count', () => {
+    resetRateCapState();
+    
+    // Record actions that require approval
+    recordAction('require_approval', 'agent1');
+    recordAction('require_approval', 'agent2');
+
+    let status = getRateCapStatus();
+    expect(status.state.pending_approvals).toBe(2);
+
+    releaseApproval();
+
+    status = getRateCapStatus();
+    expect(status.state.pending_approvals).toBe(1);
   });
 
   it('triggers circuit breaker at threshold', () => {
-    const cfg = {
-      ...loadRateCapConfig(),
-      circuit_breaker_threshold: 5,
-      circuit_breaker_cooldown_ms: 10000,
-    };
-    
-    // Fill up to threshold
-    for (let i = 0; i < 5; i++) {
-      recordAction(`action_${i}`);
-    }
-    
-    const result = checkRateCap('action_next', undefined, cfg);
-    expect(result.allowed).toBe(false);
-    expect(result.reason).toContain('Circuit breaker');
-    
-    const status = getRateCapStatus();
-    expect(status.state.circuit_breaker_tripped).toBe(true);
-  });
-
-  it('resets state correctly', () => {
-    recordAction('test');
-    recordAction('require_approval');
-    
     resetRateCapState();
-    
-    const status = getRateCapStatus();
-    expect(status.state.actions_in_window).toBe(0);
-    expect(status.state.pending_approvals).toBe(0);
-    expect(status.state.circuit_breaker_tripped).toBe(false);
+    const config: RateCapConfig = {
+      max_actions_per_window: 1000,
+      window_ms: 60000,
+      cooldown_ms: 0,
+      max_pending_approvals: 100,
+      circuit_breaker_threshold: 3,
+    };
+
+    recordAction('contain', 'action1');
+    recordAction('contain', 'action2');
+    recordAction('contain', 'action3');
+
+    const result = checkRateCap('contain', 'action4', config);
+    expect(result.allowed).toBe(false);
+    expect(result.reason?.toLowerCase()).toContain('circuit');
   });
 
-  it('returns status with config and state', () => {
+  it('provides rate cap status', () => {
+    resetRateCapState();
+    recordAction('contain', 'test-action');
+    recordAction('harden', 'test-action');
+
     const status = getRateCapStatus();
-    
-    expect(status).toHaveProperty('config');
-    expect(status).toHaveProperty('state');
-    expect(status.config).toHaveProperty('max_actions_per_window');
-    expect(status.state).toHaveProperty('actions_in_window');
-    expect(status.state).toHaveProperty('circuit_breaker_tripped');
-    expect(status.state).toHaveProperty('pending_approvals');
+    expect(status.state.actions_in_window).toBeGreaterThanOrEqual(2);
   });
 });

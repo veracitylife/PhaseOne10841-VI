@@ -144,6 +144,11 @@
       <button id="btn-send-otp" onclick="sendOtp()">Send code</button>
       <button class="ok hidden" id="btn-verify" onclick="verifyOtp()">Verify &amp; enter</button>
     </div>
+    <div id="oidc-login" class="hidden" style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
+      <p class="sub">Or sign in with your organization's SSO:</p>
+      <button class="ghost" onclick="loginWithOIDC()">Sign in with SSO</button>
+      <p class="meta" id="oidc-issuer" style="font-size:.7rem;color:var(--muted);margin-top:.5rem;"></p>
+    </div>
     <p class="meta" id="login-msg" style="color:var(--muted);font-size:.8rem;margin-top:.75rem;"></p>
   </div>
 
@@ -165,6 +170,7 @@
         <button data-view="audit">Audit log</button>
         <button data-view="lab">Lab monitor</button>
         <button data-view="ops">Ops / Phase 5</button>
+        <button data-view="phase6">Phase 6</button>
         <button data-view="settings">Settings</button>
       </nav>
       <main>
@@ -340,6 +346,49 @@
           </div>
         </section>
 
+        <section id="view-phase6" class="view hidden">
+          <div class="panel">
+            <h2>Phase 6 — Operator UX &amp; Integration</h2>
+            <p class="sub">PhaseOne10841 v0.6.0 — CLI/GUI, deeper adapters, richer rules, OIDC/SSO path.</p>
+            
+            <h3 style="font-size:.95rem;margin-top:1rem">CLI &amp; GUI</h3>
+            <p class="sub">Full operator CLI with 18+ commands. See <a href="https://github.com/veracityintegrity/phaseone10841/blob/main/docs/cli.md" target="_blank" style="color:var(--accent)">docs/cli.md</a>.</p>
+            <pre style="font-size:.75rem">npm run phaseone -- help
+npm run phaseone -- health
+npm run phaseone -- rules evaluate --event '{"tool_name":"run_shell","decision":"deny"}'
+npm run phaseone -- metrics-sniff
+npm run phaseone -- gui</pre>
+            
+            <h3 style="font-size:.95rem;margin-top:1rem">OIDC / SSO Status</h3>
+            <pre id="oidc-status"></pre>
+            
+            <h3 style="font-size:.95rem;margin-top:1rem">Framework Adapters</h3>
+            <p class="sub">OpenAI-compatible (works), LangChain, CrewAI, Claude-style tool proxy. See <code>adapters/README.md</code>.</p>
+            <div class="grid2" style="margin-top:.5rem">
+              <div class="item">
+                <strong>OpenAI SDK</strong>
+                <div class="meta">Works — point baseURL at gateway /v1</div>
+              </div>
+              <div class="item">
+                <strong>LangChain</strong>
+                <div class="meta">Works — helper + enforce wrapper</div>
+              </div>
+              <div class="item">
+                <strong>CrewAI</strong>
+                <div class="meta">Works — A2A firewall + tool enforce</div>
+              </div>
+              <div class="item">
+                <strong>Claude/Anthropic</strong>
+                <div class="meta">Works — tool_use proxy + scan</div>
+              </div>
+            </div>
+            
+            <h3 style="font-size:.95rem;margin-top:1rem">Detection Rules (Richer)</h3>
+            <p class="sub">Aggregation + time-window rules. See <code>rules/README.md</code>.</p>
+            <div id="rules-phase6"></div>
+          </div>
+        </section>
+
         <section id="view-settings" class="view hidden">
           <div class="panel">
             <h2>Settings &amp; health</h2>
@@ -444,7 +493,25 @@
         document.getElementById('btn-send-otp').classList.add('hidden');
       }
     }
+    
+    // Also check legacy OIDC status endpoint
+    try {
+      const { data: oidc } = await api('/api/auth/oidc/status');
+      if (oidc.enabled) {
+        document.getElementById('oidc-login').classList.remove('hidden');
+        document.getElementById('oidc-issuer').textContent = 'Issuer: ' + (oidc.issuer || 'configured');
+      }
+    } catch (e) { /* OIDC not available */ }
     return false;
+  }
+
+  async function loginWithOIDC() {
+    const { res, data } = await api('/api/auth/oidc/login');
+    if (res.ok && data.redirect_url) {
+      window.location.href = data.redirect_url;
+    } else {
+      document.getElementById('login-msg').textContent = data.error || 'OIDC login failed';
+    }
   }
 
   function showApp(email, role) {
@@ -762,6 +829,24 @@
         pkce_enabled: oidc.hasPkce || false,
         configure_via: 'PHASEONE_OIDC_* environment variables',
       }, null, 2);
+    }
+
+    if (currentView === 'phase6') {
+      const { data: oidc } = await api('/api/auth/oidc/status');
+      document.getElementById('oidc-status').textContent = JSON.stringify(oidc, null, 2);
+      
+      const { data: rules } = await api('/api/rules');
+      const rulesList = rules.data || [];
+      const aggRules = rulesList.filter(r => r.id && (r.id.includes('brute') || r.id.includes('rapid') || r.id.includes('multi') || r.id.includes('average') || r.id.includes('burst')));
+      const simpleRules = rulesList.filter(r => !aggRules.includes(r));
+      
+      let rulesHtml = '<div class="grid2">';
+      rulesHtml += '<div><h4 style="font-size:.85rem;margin:0 0 .5rem">Aggregation Rules (Phase 6)</h4>';
+      rulesHtml += aggRules.length ? aggRules.map(r => `<div class="item"><span class="sev ${escapeHtml(r.level)}">${escapeHtml(r.level)}</span> <strong>${escapeHtml(r.title || r.id)}</strong><div class="meta">hits: ${r.hit_count ?? 0}</div></div>`).join('') : '<div class="empty">No aggregation rules found</div>';
+      rulesHtml += '</div><div><h4 style="font-size:.85rem;margin:0 0 .5rem">Simple Matching Rules</h4>';
+      rulesHtml += simpleRules.length ? simpleRules.slice(0,6).map(r => `<div class="item"><span class="sev ${escapeHtml(r.level)}">${escapeHtml(r.level)}</span> <strong>${escapeHtml(r.title || r.id)}</strong><div class="meta">hits: ${r.hit_count ?? 0}</div></div>`).join('') : '<div class="empty">No simple rules</div>';
+      rulesHtml += '</div></div>';
+      document.getElementById('rules-phase6').innerHTML = rulesHtml;
     }
   }
 

@@ -1,0 +1,31 @@
+# PhaseOne10841 Gatekeeper Playbook — Injection Blocked
+# Veracity Integrity LLC · https://VeracityIntegrity.com
+# DEFENSIVE ONLY
+
+id: injection-blocked-response
+name: Injection Block Response
+description: Respond when prompt injection is blocked
+
+enabled: true
+tier: observe
+
+match:
+  rule_id: injection-blocked
+  severity:
+    - ">=medium"
+
+actions:
+  - type: emit_alert
+    params:
+      message: "Prompt injection blocked by gateway"
+
+  - type: write_audit
+    params:
+      action: gatekeeper.injection_blocked
+
+  - type: dashboard_notify
+    params:
+      message: "🛡️ Injection attempt blocked"
+
+cooldown_ms: 10000
+max_executions_per_window: 20
