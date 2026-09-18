@@ -1,0 +1,59 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: phaseone-retention
+  labels:
+    app.kubernetes.io/name: phaseone
+    app.kubernetes.io/component: retention
+spec:
+  schedule: "0 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: phaseone
+            app.kubernetes.io/component: retention
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: phaseone
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: retention
+              image: phaseone:0.8.0
+              imagePullPolicy: IfNotPresent
+              command:
+                - tsx
+                - scripts/retention-cleanup.ts
+              args:
+                - "--execute"
+              envFrom:
+                - configMapRef:
+                    name: phaseone-config
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: phaseone-secrets
+                      key: DATABASE_URL
+              resources:
+                limits:
+                  cpu: 200m
+                  memory: 256Mi
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL

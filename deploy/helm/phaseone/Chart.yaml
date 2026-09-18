@@ -1,0 +1,16 @@
+apiVersion: v2
+name: phaseone
+description: Defensive Agent Security Gateway
+type: application
+version: 0.8.0
+appVersion: "0.8.0"
+keywords:
+  - phaseone
+  - agent-edr
+  - security-gateway
+home: https://VeracityIntegrity.com
+sources:
+  - https://github.com/veracitylife/PhaseOne10841-VI
+maintainers:
+  - name: Veracity Integrity LLC
+    url: https://VeracityIntegrity.com

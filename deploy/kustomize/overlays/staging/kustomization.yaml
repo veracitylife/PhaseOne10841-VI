@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: phaseone-staging
+
+nameSuffix: -staging
+
+resources:
+  - ../../base
+  - ingress.yaml
+
+replicas:
+  - name: phaseone-gateway
+    count: 2
+  - name: phaseone-dashboard
+    count: 2
+
+patches:
+  - path: patches/gateway-resources.yaml
+  - path: patches/dashboard-resources.yaml
+  - path: patches/configmap-env.yaml
+
+images:
+  - name: phaseone
+    newTag: "0.8.0"
+
+commonLabels:
+  environment: staging

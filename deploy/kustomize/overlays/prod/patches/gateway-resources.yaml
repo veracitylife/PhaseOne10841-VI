@@ -1,0 +1,16 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: phaseone-gateway
+spec:
+  template:
+    spec:
+      containers:
+        - name: gateway
+          resources:
+            limits:
+              cpu: "2"
+              memory: 1Gi
+            requests:
+              cpu: 500m
+              memory: 512Mi

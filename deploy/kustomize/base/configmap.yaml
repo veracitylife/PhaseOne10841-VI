@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: phaseone-config
+  labels:
+    app.kubernetes.io/name: phaseone
+data:
+  NODE_ENV: production
+  GATEWAY_PORT: "8080"
+  DASHBOARD_PORT: "3000"
+  GATEWAY_URL: http://phaseone-gateway:8080
+  UPSTREAM_PROVIDER: mock
+  OPENAI_BASE_URL: https://api.openai.com/v1
+  OLLAMA_BASE_URL: http://host.docker.internal:11434/v1
+  OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
+  PHASEONE_POLICY_PATH: /app/policy/default-policy.yaml
+  PHASEONE_RULES_DIR: /app/rules
+  PHASEONE_PLAYBOOKS_DIR: /app/playbooks
+  PHASEONE_METRICS_ENABLED: "true"
+  PHASEONE_RETENTION_DAYS: "30"
+  PHASEONE_APPROVAL_TIMEOUT_MS: "120000"
+  PHASEONE_API_RATE_LIMIT: "120"
+  PHASEONE_API_RATE_WINDOW_MS: "60000"
+  PHASEONE_OTP_RATE_LIMIT: "5"
+  PHASEONE_DASHBOARD_AUTH: "true"
+  PHASEONE_SECURE_COOKIES: "false"
+  PHASEONE_GATEKEEPER_ENABLED: "false"
+  PHASEONE_GATEKEEPER_DRY_RUN: "true"
+  PHASEONE_BACKUP_DIR: /tmp/backups
+  PHASEONE_OTP_FALLBACK_FILE: /tmp/phaseone-otp.log
+  SMTP_FROM: noreply@clovisstar.com
+  SMTP_PORT: "587"
+  SMTP_SECURE: "false"

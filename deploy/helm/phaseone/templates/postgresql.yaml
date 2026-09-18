@@ -1,0 +1,134 @@
+{{- if .Values.postgres.enabled }}
+{{- $pgSecretName := include "phaseone.postgresSecretName" . -}}
+{{- if and (not .Values.postgres.auth.existingSecret) }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $pgSecretName }}
+  labels:
+    {{- include "phaseone.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+  annotations:
+    phaseone.veracityintegrity.com/notice: "Lab-only embedded Postgres credentials — use external DATABASE_URL in production."
+type: Opaque
+stringData:
+  {{ .Values.postgres.auth.secretKeys.username }}: {{ .Values.postgres.auth.username | quote }}
+  {{ .Values.postgres.auth.secretKeys.password }}: {{ .Values.postgres.auth.password | default "REPLACE_VIA_KUBECTL" | quote }}
+  {{ .Values.postgres.auth.secretKeys.database }}: {{ .Values.postgres.auth.database | quote }}
+---
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "phaseone.postgresServiceName" . }}
+  labels:
+    {{- include "phaseone.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.postgres.service.port }}
+      targetPort: postgres
+      protocol: TCP
+      name: postgres
+  selector:
+    {{- include "phaseone.postgresSelectorLabels" . | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "phaseone.fullname" . }}-postgres
+  labels:
+    {{- include "phaseone.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+  annotations:
+    phaseone.veracityintegrity.com/notice: "Embedded Postgres is for lab/dev only. Prefer external managed Postgres via DATABASE_URL."
+spec:
+  serviceName: {{ include "phaseone.postgresServiceName" . }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "phaseone.postgresSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "phaseone.postgresSelectorLabels" . | nindent 8 }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: {{ printf "%s:%s" .Values.postgres.image.repository .Values.postgres.image.tag }}
+          imagePullPolicy: {{ .Values.postgres.image.pullPolicy }}
+          ports:
+            - name: postgres
+              containerPort: {{ .Values.postgres.service.port }}
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $pgSecretName }}
+                  key: {{ .Values.postgres.auth.secretKeys.username }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $pgSecretName }}
+                  key: {{ .Values.postgres.auth.secretKeys.password }}
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $pgSecretName }}
+                  key: {{ .Values.postgres.auth.secretKeys.database }}
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.postgres.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      {{- if not .Values.postgres.persistence.enabled }}
+      volumes:
+        - name: data
+          emptyDir: {}
+      {{- end }}
+  {{- if .Values.postgres.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        {{- if .Values.postgres.persistence.storageClass }}
+        storageClassName: {{ .Values.postgres.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.postgres.persistence.size }}
+  {{- end }}
+{{- end }}
