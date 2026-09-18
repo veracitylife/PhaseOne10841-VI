@@ -1,6 +1,6 @@
 # PhaseOne10841 — Defensive Agent Security Gateway (Agent EDR)
 
-**phaseone-core v0.7.0**
+**phaseone-core v0.8.0-pre** (Phase 8 Wave A)
 
 Watches autonomous agents the way CrowdStrike watches endpoints — **outside** the agent, not via prompt-only hope.
 
@@ -421,9 +421,47 @@ PhaseOne10841ME/
 
 ---
 
-## Roadmap
+## Phase 8 — Enterprise features (this release)
 
-### Current: v0.7.0 (Phase 7 shipped)
+### Wave A (v0.8.0-pre)
+
+| Feature | Status |
+|---------|--------|
+| **OIDC/SSO (#1)** | ✅ Complete — Okta/Azure AD/Auth0 support with PKCE, role claims, end-session |
+| **Gatekeeper simulation (#9)** | ✅ Complete — Dry-run replay, blast-radius analysis, rate caps, CLI |
+| **Packaged SDKs (#8)** | ✅ Complete — `@phaseone/client` (npm), `phaseone-client` (PyPI) |
+
+### New in Phase 8 Wave A
+
+- **OIDC/SSO authentication** — Enterprise SSO via Okta, Azure AD, Auth0
+  - PKCE-enabled authorization code flow
+  - Role claims mapping to PhaseOne RBAC
+  - IdP end-session logout support
+  - See [`docs/oidc-setup.md`](docs/oidc-setup.md)
+
+- **Gatekeeper simulation** — Dry-run policy replay
+  - `POST /v1/phaseone/gatekeeper/simulate` API
+  - Blast-radius summary (agents/tools/domains affected)
+  - Rate caps + cooldowns for contain/harden actions
+  - CLI: `npm run phaseone -- gatekeeper simulate`
+  - Dashboard simulation controls
+
+- **Packaged SDKs** — Official client libraries
+  - `@phaseone/client` (TypeScript/JavaScript) — [`docs/sdk-js.md`](docs/sdk-js.md)
+  - `phaseone-client` (Python) — [`docs/sdk-python.md`](docs/sdk-python.md)
+  - OpenAI SDK integration helpers
+  - Tool enforcement wrappers
+
+---
+
+## Roadmap (indicative)
+
+- Richer rule language (aggregations, time windows)  
+- Optional signed canary packages for production deployments  
+- Multi-tenant org controls beyond email allowlists  
+- Additional IdP integrations (SAML, etc.)  
+
+### Current: v0.7.0 → v0.8.0-pre (Phase 7 + Phase 8 Wave A)
 
 Gatekeeper worker, YAML playbooks, runtime overrides, human confirmation for harden-tier actions, LLM advisor.
 

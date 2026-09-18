@@ -349,4 +349,240 @@ export function describeOIDCConfig(): Record<string, { envVar: string; descripti
 
 export function __testResetOIDCState(): void {
   oidcStates.clear();
+  pendingAuths.clear();
+}
+
+// ============================================================================
+// Phase 8 Wave A Aliases and Extensions
+// Provides compatibility for both camelCase and PascalCase naming conventions
+// ============================================================================
+
+/** Alias for OIDCConfig using camelCase naming */
+export type OidcConfig = OIDCConfig & {
+  responseType?: 'code';
+  responseMode?: 'query' | 'fragment';
+  usePkce?: boolean;
+  roleClaimMapping?: Record<string, string>;
+  roleClaimName?: string;
+  defaultRole?: 'admin' | 'viewer' | 'none';
+  endSessionEndpoint?: string;
+  stateTtlMs?: number;
+  ssoOnly?: boolean;
+};
+
+/** Alias for OIDCUserInfo */
+export type OidcUserInfo = OIDCUserInfo;
+
+/** Alias for OIDCTokenResponse */
+export type OidcTokenResponse = OIDCTokenResponse;
+
+export interface PendingOidcAuth {
+  state: string;
+  nonce: string;
+  codeVerifier?: string;
+  codeChallenge?: string;
+  createdAt: number;
+  expiresAt: number;
+  returnUrl?: string;
+}
+
+const pendingAuths = new Map<string, PendingOidcAuth>();
+
+/** Alias for loadOIDCConfig with extended options */
+export function loadOidcConfig(): OidcConfig {
+  const base = loadOIDCConfig();
+  const ssoOnly = (process.env.PHASEONE_OIDC_SSO_ONLY ?? 'false').toLowerCase() === 'true';
+  const usePkce = (process.env.PHASEONE_OIDC_USE_PKCE ?? 'true').toLowerCase() !== 'false';
+  
+  let roleClaimMapping: Record<string, string> | undefined;
+  const mappingStr = process.env.PHASEONE_OIDC_ROLE_MAPPING;
+  if (mappingStr) {
+    try {
+      roleClaimMapping = JSON.parse(mappingStr);
+    } catch {
+      // Invalid JSON, ignore
+    }
+  }
+
+  return {
+    ...base,
+    enabled: (process.env.PHASEONE_OIDC_ENABLED ?? '').toLowerCase() === 'true' || base.enabled,
+    responseType: 'code',
+    responseMode: 'query',
+    usePkce,
+    roleClaimMapping,
+    roleClaimName: process.env.PHASEONE_OIDC_ROLE_CLAIM ?? base.rolesClaim ?? 'groups',
+    defaultRole: (process.env.PHASEONE_OIDC_DEFAULT_ROLE ?? 'viewer') as 'admin' | 'viewer' | 'none',
+    endSessionEndpoint: process.env.PHASEONE_OIDC_END_SESSION_ENDPOINT,
+    stateTtlMs: Number(process.env.PHASEONE_OIDC_STATE_TTL_MS ?? 600000),
+    ssoOnly,
+    scopes: (process.env.PHASEONE_OIDC_SCOPES ?? 'openid email profile').split(/[\s,]+/).filter(Boolean),
+  };
+}
+
+/** Alias for isOIDCEnabled */
+export function isOidcEnabled(cfg?: OidcConfig): boolean {
+  if (cfg) {
+    return cfg.enabled && Boolean(cfg.issuer) && Boolean(cfg.clientId) && Boolean(cfg.redirectUri);
+  }
+  const config = loadOidcConfig();
+  return config.enabled && Boolean(config.issuer) && Boolean(config.clientId) && Boolean(config.redirectUri);
+}
+
+/** Generate cryptographically random state */
+export { generateState };
+
+/** Generate cryptographically random nonce */
+export { generateNonce };
+
+/** Generate PKCE code verifier */
+export function generatePkceVerifier(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+/** Compute S256 PKCE challenge from verifier */
+export function computePkceChallenge(verifier: string): string {
+  return createHash('sha256').update(verifier).digest('base64url');
+}
+
+/** Create pending OIDC auth state */
+export function createPendingAuth(cfg: OidcConfig, returnUrl?: string): PendingOidcAuth {
+  const state = generateState();
+  const nonce = generateNonce();
+  const codeVerifier = cfg.usePkce ? generatePkceVerifier() : undefined;
+  const codeChallenge = codeVerifier ? computePkceChallenge(codeVerifier) : undefined;
+  const createdAt = Date.now();
+  const expiresAt = createdAt + (cfg.stateTtlMs ?? 600000);
+
+  const pending: PendingOidcAuth = {
+    state,
+    nonce,
+    codeVerifier,
+    codeChallenge,
+    createdAt,
+    expiresAt,
+    returnUrl,
+  };
+
+  pendingAuths.set(state, pending);
+  
+  // Auto-cleanup after TTL
+  setTimeout(() => pendingAuths.delete(state), cfg.stateTtlMs ?? 600000);
+
+  return pending;
+}
+
+/** Get pending auth by state (non-destructive) */
+export function getPendingAuth(state: string): PendingOidcAuth | null {
+  const pending = pendingAuths.get(state);
+  if (!pending) return null;
+  if (Date.now() > pending.expiresAt) {
+    pendingAuths.delete(state);
+    return null;
+  }
+  return pending;
+}
+
+/** Consume pending auth (one-time use) */
+export function consumePendingAuth(state: string): PendingOidcAuth | null {
+  const pending = getPendingAuth(state);
+  if (pending) {
+    pendingAuths.delete(state);
+  }
+  return pending;
+}
+
+/** Parse ID token JWT (without cryptographic validation) */
+export function parseIdToken(idToken: string): { header: Record<string, unknown>; payload: Record<string, unknown>; signature: string } {
+  const parts = idToken.split('.');
+  if (parts.length !== 3) {
+    throw new Error('Invalid ID token format: expected 3 parts');
+  }
+  try {
+    const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    return { header, payload, signature: parts[2] };
+  } catch {
+    throw new Error('Invalid ID token: failed to parse JWT');
+  }
+}
+
+/** Validate ID token claims */
+export function validateIdTokenClaims(
+  payload: Record<string, unknown>,
+  cfg: OidcConfig,
+  expectedNonce: string
+): { valid: boolean; error?: string } {
+  // Check issuer
+  if (payload.iss !== cfg.issuer) {
+    return { valid: false, error: `Invalid issuer: expected ${cfg.issuer}, got ${payload.iss}` };
+  }
+
+  // Check audience
+  const aud = payload.aud;
+  const audMatch = Array.isArray(aud) ? aud.includes(cfg.clientId) : aud === cfg.clientId;
+  if (!audMatch) {
+    return { valid: false, error: `Invalid audience: expected ${cfg.clientId}` };
+  }
+
+  // Check expiration
+  const exp = payload.exp as number | undefined;
+  if (exp && exp < Math.floor(Date.now() / 1000)) {
+    return { valid: false, error: 'Token has expired' };
+  }
+
+  // Check nonce
+  if (expectedNonce && payload.nonce !== expectedNonce) {
+    return { valid: false, error: `Nonce mismatch: expected ${expectedNonce}` };
+  }
+
+  return { valid: true };
+}
+
+/** Resolve role from OIDC claims */
+export function resolveRoleFromClaims(userInfo: OidcUserInfo, cfg: OidcConfig): 'admin' | 'viewer' | 'none' {
+  const claimName = cfg.roleClaimName ?? cfg.rolesClaim ?? 'groups';
+  const claimValue = userInfo[claimName];
+  
+  let roles: string[] = [];
+  if (Array.isArray(claimValue)) {
+    roles = claimValue;
+  } else if (typeof claimValue === 'string') {
+    roles = [claimValue];
+  }
+
+  // Also check standard groups/roles claims
+  if (userInfo.groups) {
+    roles = [...roles, ...(Array.isArray(userInfo.groups) ? userInfo.groups : [userInfo.groups])];
+  }
+  if (userInfo.roles) {
+    roles = [...roles, ...(Array.isArray(userInfo.roles) ? userInfo.roles : [userInfo.roles])];
+  }
+
+  const mapping = cfg.roleClaimMapping;
+  const adminValue = mapping?.admin ?? cfg.adminRoleValue ?? 'phaseone-admin';
+  const viewerValue = mapping?.viewer ?? cfg.viewerRoleValue ?? 'phaseone-viewer';
+
+  // Check for admin first (higher priority)
+  if (roles.some(r => r === adminValue || r === 'admin' || r === 'phaseone-admin')) {
+    return 'admin';
+  }
+  
+  // Check for viewer
+  if (roles.some(r => r === viewerValue || r === 'viewer' || r === 'phaseone-viewer')) {
+    return 'viewer';
+  }
+
+  return cfg.defaultRole ?? 'viewer';
+}
+
+/** Test helper to reset state */
+export function __testResetOidcState(): void {
+  pendingAuths.clear();
+  oidcStates.clear();
+}
+
+/** Test helper to get pending auth count */
+export function __testGetPendingAuthCount(): number {
+  return pendingAuths.size;
 }

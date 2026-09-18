@@ -38,12 +38,17 @@ import {
   createOIDCAuthorizationUrl,
   handleOIDCCallback,
   describeOIDCConfig,
+  loadOidcConfig,
+  isOidcEnabled,
+  createPendingAuth,
+  consumePendingAuth,
+  resolveRoleFromClaims,
 } from '../../shared/src/oidc.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const GATEWAY_URL = process.env.GATEWAY_URL ?? 'http://gateway:8080';
 const PORT = Number(process.env.DASHBOARD_PORT ?? 3000);
-const VERSION = '0.7.0';
+const VERSION = '0.8.0-pre';
 
 const app = new Hono();
 const authCfg = loadAuthConfig();
@@ -261,6 +266,73 @@ app.get('/api/auth/oidc/login', (c) => {
     const msg = err instanceof Error ? err.message : 'OIDC initialization failed';
     return c.json({ ok: false, error: msg }, 500);
   }
+});
+
+// Wave A: initiate endpoint for SSO button
+app.get('/api/auth/oidc/initiate', (c) => {
+  const returnUrl = c.req.query('return_url') ?? '/';
+  const oidcCfg = loadOidcConfig();
+  
+  if (!isOidcEnabled(oidcCfg)) {
+    return c.json({ ok: false, error: 'OIDC is not enabled' }, 400);
+  }
+  
+  try {
+    const pending = createPendingAuth(oidcCfg, returnUrl);
+    const authEndpoint = oidcCfg.authorizationEndpoint ?? `${oidcCfg.issuer}/authorize`;
+    const params = new URLSearchParams({
+      response_type: 'code',
+      client_id: oidcCfg.clientId,
+      redirect_uri: oidcCfg.redirectUri,
+      scope: oidcCfg.scopes.join(' '),
+      state: pending.state,
+      nonce: pending.nonce,
+    });
+    if (pending.codeChallenge) {
+      params.set('code_challenge', pending.codeChallenge);
+      params.set('code_challenge_method', 'S256');
+    }
+    const authUrl = `${authEndpoint}?${params.toString()}`;
+    return c.json({ ok: true, auth_url: authUrl });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'OIDC initialization failed';
+    return c.json({ ok: false, error: msg }, 500);
+  }
+});
+
+// Wave A: logout endpoint
+app.post('/api/auth/oidc/logout', async (c) => {
+  const cookies = parseCookies(c.req.header('cookie') ?? '');
+  const sessionId = cookies.phaseone_session;
+  const session = sessionId ? getSession(sessionId) : null;
+  
+  if (session) {
+    destroySession(sessionId!);
+    await recordAudit({
+      actor_email: session.email,
+      action: 'logout',
+      detail: { method: session.authMethod ?? 'oidc' },
+      ip: c.req.header('x-forwarded-for') ?? undefined,
+    }).catch(() => undefined);
+  }
+  
+  const oidcCfg = loadOidcConfig();
+  let logoutUrl: string | undefined;
+  
+  if (oidcCfg.endSessionEndpoint && session?.idToken) {
+    const params = new URLSearchParams({
+      id_token_hint: session.idToken,
+      post_logout_redirect_uri: `${process.env.DASHBOARD_URL ?? 'http://localhost:3000'}/`,
+    });
+    logoutUrl = `${oidcCfg.endSessionEndpoint}?${params.toString()}`;
+  }
+  
+  const headers = new Headers();
+  for (const cookie of clearSessionCookies(authCfg)) {
+    headers.append('set-cookie', cookie);
+  }
+  
+  return c.json({ ok: true, logout_url: logoutUrl }, { headers });
 });
 
 app.get('/api/auth/oidc/callback', async (c) => {

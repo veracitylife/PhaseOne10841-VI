@@ -299,7 +299,7 @@ describe('onboard Phase 4 env', () => {
 });
 
 describe('gateway config version', () => {
-  it('is semver 0.7.x (Phase 7)', () => {
-    expect(loadConfig().productVersion).toMatch(/^0\.7\./);
+  it('is semver 0.8.x (Phase 8)', () => {
+    expect(loadConfig().productVersion).toMatch(/^0\.8\./);
   });
 });

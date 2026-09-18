@@ -1014,3 +1014,223 @@ describe('Gatekeeper LLM Advisor', () => {
     expect(health.recommended_provider).toBe('none');
   });
 });
+
+// ============================================================================
+// Phase 8 Wave A: Gatekeeper Simulation & Rate Cap Tests
+// ============================================================================
+
+import {
+  loadRateCapConfig,
+  checkRateCap,
+  recordAction,
+  releaseApproval,
+  getRateCapStatus,
+  resetRateCapState,
+  simulateEvents,
+  calculateBlastRadius,
+  type SimulationEvent,
+  type RateCapConfig,
+} from '../shared/src/gatekeeper.js';
+
+describe('Gatekeeper Simulation', () => {
+  it('simulates events and returns results', () => {
+    const events: SimulationEvent[] = [
+      { id: 'e1', timestamp: Date.now(), event_type: 'tool.call', agent_id: 'a1' },
+      { id: 'e2', timestamp: Date.now(), event_type: 'canary.trigger', agent_id: 'a2' },
+      { id: 'e3', timestamp: Date.now(), event_type: 'session.start', agent_id: 'a1' },
+    ];
+
+    const output = simulateEvents(events, {});
+
+    expect(output.ok).toBe(true);
+    expect(output.results.length).toBe(3);
+    expect(output.results.every(r => r.event && r.decision)).toBe(true);
+    expect(output.dry_run).toBe(true);
+  });
+
+  it('filters events by type', () => {
+    const events: SimulationEvent[] = [
+      { id: 'e1', timestamp: Date.now(), event_type: 'tool.call', agent_id: 'a1' },
+      { id: 'e2', timestamp: Date.now(), event_type: 'canary.trigger', agent_id: 'a2' },
+      { id: 'e3', timestamp: Date.now(), event_type: 'tool.call', agent_id: 'a3' },
+    ];
+
+    const output = simulateEvents(events, { event_types: ['tool.call'] });
+
+    expect(output.results.length).toBe(2);
+    expect(output.results.every(r => r.event.event_type === 'tool.call')).toBe(true);
+  });
+
+  it('filters events by agent', () => {
+    const events: SimulationEvent[] = [
+      { id: 'e1', timestamp: Date.now(), event_type: 'tool.call', agent_id: 'a1' },
+      { id: 'e2', timestamp: Date.now(), event_type: 'canary.trigger', agent_id: 'a2' },
+      { id: 'e3', timestamp: Date.now(), event_type: 'session.start', agent_id: 'a1' },
+    ];
+
+    const output = simulateEvents(events, { agent_ids: ['a1'] });
+
+    expect(output.results.length).toBe(2);
+    expect(output.results.every(r => r.event.agent_id === 'a1')).toBe(true);
+  });
+
+  it('limits results', () => {
+    const events: SimulationEvent[] = Array.from({ length: 10 }, (_, i) => ({
+      id: `e${i}`,
+      timestamp: Date.now(),
+      event_type: 'tool.call',
+      agent_id: 'a1',
+    }));
+
+    const output = simulateEvents(events, { max_events: 5 });
+
+    expect(output.results.length).toBe(5);
+  });
+
+  it('calculates blast radius', () => {
+    const events: SimulationEvent[] = [
+      { id: 'e1', timestamp: Date.now(), event_type: 'tool.call', agent_id: 'a1', tool_name: 'fs.write', destination: 'example.com' },
+      { id: 'e2', timestamp: Date.now(), event_type: 'tool.call', agent_id: 'a2', tool_name: 'http.fetch', destination: 'example.com' },
+      { id: 'e3', timestamp: Date.now(), event_type: 'canary.trigger', agent_id: 'a1', tool_name: 'fs.read' },
+    ];
+
+    const output = simulateEvents(events, {});
+    const blast = output.blast_radius;
+
+    expect(blast.total_events).toBe(3);
+    expect(blast.affected_agents.length).toBe(2);
+    expect(blast.affected_tools.length).toBeGreaterThan(0);
+  });
+});
+
+describe('Rate Cap', () => {
+  beforeEach(() => {
+    resetRateCapState();
+  });
+
+  it('loads rate cap config from environment', () => {
+    const prev = process.env.PHASEONE_GATEKEEPER_MAX_ACTIONS;
+    process.env.PHASEONE_GATEKEEPER_MAX_ACTIONS = '50';
+
+    const config = loadRateCapConfig();
+    expect(config.max_actions_per_window).toBe(50);
+
+    if (prev === undefined) delete process.env.PHASEONE_GATEKEEPER_MAX_ACTIONS;
+    else process.env.PHASEONE_GATEKEEPER_MAX_ACTIONS = prev;
+  });
+
+  it('allows actions under rate limit', () => {
+    const config: RateCapConfig = {
+      max_actions_per_window: 5,
+      window_ms: 60000,
+      cooldown_ms: 0,
+      max_pending_approvals: 10,
+      circuit_breaker_threshold: 100,
+    };
+
+    const result1 = checkRateCap('contain', 'test-action', config);
+    expect(result1.allowed).toBe(true);
+
+    recordAction('contain', 'test-action');
+
+    const result2 = checkRateCap('contain', 'test-action', config);
+    expect(result2.allowed).toBe(true);
+  });
+
+  it('blocks actions exceeding rate limit', () => {
+    const config: RateCapConfig = {
+      max_actions_per_window: 2,
+      window_ms: 60000,
+      cooldown_ms: 0,
+      max_pending_approvals: 10,
+      circuit_breaker_threshold: 100,
+    };
+
+    recordAction('contain', 'test-action');
+    recordAction('contain', 'test-action');
+
+    const result = checkRateCap('contain', 'test-action', config);
+    expect(result.allowed).toBe(false);
+    expect(result.reason?.toLowerCase()).toContain('rate');
+  });
+
+  it('enforces cooldown between same actions', () => {
+    const config: RateCapConfig = {
+      max_actions_per_window: 100,
+      window_ms: 60000,
+      cooldown_ms: 5000,
+      max_pending_approvals: 10,
+      circuit_breaker_threshold: 100,
+    };
+
+    recordAction('contain', 'test-action');
+
+    const result = checkRateCap('contain', 'test-action', config);
+    expect(result.allowed).toBe(false);
+    expect(result.reason?.toLowerCase()).toContain('cooldown');
+  });
+
+  it('enforces max pending approvals', () => {
+    resetRateCapState();
+    const config: RateCapConfig = {
+      max_actions_per_window: 100,
+      window_ms: 60000,
+      cooldown_ms: 0,
+      max_pending_approvals: 2,
+      circuit_breaker_threshold: 100,
+    };
+
+    // Record actions that require approval
+    recordAction('require_approval', 'agent1');
+    recordAction('require_approval', 'agent2');
+
+    // Check if another require_approval action would be blocked
+    const result = checkRateCap('require_approval', 'action3', config);
+    expect(result.allowed).toBe(false);
+    expect(result.reason?.toLowerCase()).toContain('pending');
+  });
+
+  it('releases approval and updates pending count', () => {
+    resetRateCapState();
+    
+    // Record actions that require approval
+    recordAction('require_approval', 'agent1');
+    recordAction('require_approval', 'agent2');
+
+    let status = getRateCapStatus();
+    expect(status.state.pending_approvals).toBe(2);
+
+    releaseApproval();
+
+    status = getRateCapStatus();
+    expect(status.state.pending_approvals).toBe(1);
+  });
+
+  it('triggers circuit breaker at threshold', () => {
+    resetRateCapState();
+    const config: RateCapConfig = {
+      max_actions_per_window: 1000,
+      window_ms: 60000,
+      cooldown_ms: 0,
+      max_pending_approvals: 100,
+      circuit_breaker_threshold: 3,
+    };
+
+    recordAction('contain', 'action1');
+    recordAction('contain', 'action2');
+    recordAction('contain', 'action3');
+
+    const result = checkRateCap('contain', 'action4', config);
+    expect(result.allowed).toBe(false);
+    expect(result.reason?.toLowerCase()).toContain('circuit');
+  });
+
+  it('provides rate cap status', () => {
+    resetRateCapState();
+    recordAction('contain', 'test-action');
+    recordAction('harden', 'test-action');
+
+    const status = getRateCapStatus();
+    expect(status.state.actions_in_window).toBeGreaterThanOrEqual(2);
+  });
+});

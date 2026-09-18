@@ -1219,13 +1219,15 @@ export const commands: CommandDefinition[] = [
 
   {
     name: 'gatekeeper',
-    description: 'Manage automated defense playbooks (status, run, dry-run, list-playbooks, llm-check)',
-    usage: 'phaseone gatekeeper <status|run|dry-run|list-playbooks|confirm|deny|llm-check> [options]',
+    description: 'Manage automated defense playbooks (status, run, dry-run, simulate, list-playbooks, llm-check)',
+    usage: 'phaseone gatekeeper <status|run|dry-run|simulate|blast-radius|list-playbooks|confirm|deny|llm-check> [options]',
     category: 'gatekeeper',
     options: [
       { flag: 'status', description: 'Show gatekeeper status and config' },
       { flag: 'run', description: 'Process queued events through playbooks' },
       { flag: 'dry-run', description: 'Run playbooks in dry-run mode (no mutations)' },
+      { flag: 'simulate', description: 'Dry-run simulation of historical events (Phase 8)' },
+      { flag: 'blast-radius', description: 'Calculate blast-radius summary (Phase 8)' },
       { flag: 'list-playbooks', description: 'List available playbooks' },
       { flag: 'confirm <id>', description: 'Confirm a pending action' },
       { flag: 'deny <id>', description: 'Deny a pending action' },
@@ -1233,6 +1235,9 @@ export const commands: CommandDefinition[] = [
       { flag: '--dir <path>', description: 'Playbooks directory', default: './playbooks' },
       { flag: '--json', description: 'Output as JSON' },
       { flag: '--event <json>', description: 'Process a single event (JSON)' },
+      { flag: '--limit <n>', description: 'Limit events for simulate/blast-radius', default: '100' },
+      { flag: '--event-type <type>', description: 'Filter by event type for simulate' },
+      { flag: '--verbose', description: 'Show detailed simulation output' },
     ],
     examples: [
       'phaseone gatekeeper status                   # View current state',
@@ -1242,6 +1247,8 @@ export const commands: CommandDefinition[] = [
       'phaseone gatekeeper dry-run --event \'{"event_type":"canary_trigger","severity":"high"}\'',
       'phaseone gatekeeper confirm abc-123          # Approve pending action',
       'phaseone gatekeeper llm-check                # Check LLM advisor health',
+      'phaseone gatekeeper simulate --limit 50      # Simulate last 50 events',
+      'phaseone gatekeeper blast-radius             # Show blast-radius summary',
     ],
     tips: [
       '🛡️ DRY-RUN IS DEFAULT — no mutations without explicit run',
@@ -1258,7 +1265,7 @@ export const commands: CommandDefinition[] = [
       let confirmationId = '';
 
       for (let i = 0; i < args.length; i++) {
-        if (['status', 'run', 'dry-run', 'list-playbooks', 'confirm', 'deny', 'llm-check'].includes(args[i])) {
+        if (['status', 'run', 'dry-run', 'list-playbooks', 'confirm', 'deny', 'llm-check', 'simulate', 'blast-radius'].includes(args[i])) {
           subcommand = args[i];
           if ((subcommand === 'confirm' || subcommand === 'deny') && args[i + 1]) {
             confirmationId = args[++i];
@@ -1493,7 +1500,95 @@ export const commands: CommandDefinition[] = [
           return { ok: true, exitCode: 0, output: lines.join('\n'), data: { config, health } };
         }
 
-        return { ok: false, exitCode: 1, output: '', error: 'Unknown subcommand. Use: status, run, dry-run, list-playbooks, confirm, deny, llm-check' };
+        if (subcommand === 'simulate' || subcommand === 'blast-radius') {
+          const { simulateEvents, calculateBlastRadius, getRateCapStatus } = await import('../shared/src/gatekeeper.js');
+          const { listEvents } = await import('../recorder/src/recorder.js');
+          
+          let limit = 100;
+          let eventType = '';
+          let verbose = false;
+          
+          for (let i = 0; i < args.length; i++) {
+            if ((args[i] === '--limit' || args[i] === '-l') && args[i + 1]) {
+              limit = parseInt(args[++i], 10);
+            } else if ((args[i] === '--event-type' || args[i] === '-t') && args[i + 1]) {
+              eventType = args[++i];
+            } else if (args[i] === '--verbose' || args[i] === '-v') {
+              verbose = true;
+            }
+          }
+
+          const events = await listEvents({ eventType: eventType || undefined, limit });
+          const simEvents = events.map(e => ({
+            id: e.id,
+            timestamp: e.created_at,
+            event_type: e.event_type,
+            agent_id: e.agent_id,
+            session_id: e.session_id,
+            tool_name: e.tool_name,
+            destination: e.destination,
+          }));
+
+          const output = simulateEvents(simEvents, { max_events: limit, event_types: eventType ? [eventType] : undefined });
+
+          if (subcommand === 'blast-radius') {
+            const blast = output.blast_radius;
+            if (json) {
+              return { ok: true, exitCode: 0, output: JSON.stringify(blast, null, 2), data: blast };
+            }
+            
+            const lines = [
+              `${PRODUCT_NAME} Gatekeeper Blast-Radius Summary`,
+              '',
+              `Events analyzed: ${blast.total_events}`,
+              `Blocked: ${blast.blocked_count}`,
+              `Approval required: ${blast.approval_required_count}`,
+              `Allowed: ${blast.allowed_count}`,
+              '',
+              `Affected agents: ${blast.affected_agents.length}`,
+              `Affected tools: ${blast.affected_tools.length}`,
+              `Affected domains: ${blast.affected_domains.length}`,
+            ];
+            if (verbose && Object.keys(blast.rule_hits).length > 0) {
+              lines.push('', 'Rule hits:');
+              for (const [rule, count] of Object.entries(blast.rule_hits)) {
+                lines.push(`  ${rule}: ${count}`);
+              }
+            }
+            lines.push('', `${COMPANY}`);
+            return { ok: true, exitCode: 0, output: lines.join('\n'), data: blast };
+          }
+
+          if (json) {
+            return { ok: true, exitCode: 0, output: JSON.stringify(output, null, 2), data: output };
+          }
+
+          const lines = [
+            `${PRODUCT_NAME} Gatekeeper Simulation`,
+            '',
+            `Events simulated: ${output.results.length}`,
+            `Simulation time: ${output.simulation_time_ms}ms`,
+            '',
+            'Summary:',
+            `  Would block: ${output.blast_radius.blocked_count}`,
+            `  Would require approval: ${output.blast_radius.approval_required_count}`,
+            `  Would allow: ${output.blast_radius.allowed_count}`,
+          ];
+          if (verbose && output.results.length > 0) {
+            lines.push('', 'Results:');
+            for (const r of output.results.slice(0, 20)) {
+              const icon = r.would_block ? '✗' : r.would_require_approval ? '⏳' : '✓';
+              lines.push(`  ${icon} ${r.event.event_type ?? 'unknown'} (${r.event.agent_id ?? 'unknown'})`);
+            }
+            if (output.results.length > 20) {
+              lines.push(`  ... and ${output.results.length - 20} more`);
+            }
+          }
+          lines.push('', `${COMPANY}`);
+          return { ok: true, exitCode: 0, output: lines.join('\n'), data: output };
+        }
+
+        return { ok: false, exitCode: 1, output: '', error: 'Unknown subcommand. Use: status, run, dry-run, simulate, blast-radius, list-playbooks, confirm, deny, llm-check' };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         return { ok: false, exitCode: 1, output: '', error: `Gatekeeper error: ${msg}` };

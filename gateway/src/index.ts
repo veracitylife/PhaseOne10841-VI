@@ -32,6 +32,7 @@ import { registerPhase3Routes } from './routes/phase3.js';
 import { registerPhase4Routes } from './routes/phase4.js';
 import { registerPhase5Routes } from './routes/phase5.js';
 import { registerPhase7Routes } from './routes/phase7.js';
+import { registerGatekeeperRoutes } from './routes/gatekeeper.js';
 import { registerGatewayMiddleware } from './middleware/index.js';
 import { getRichSessionTimeline } from '../../recorder/src/recorder.js';
 
@@ -189,7 +190,7 @@ app.post('/v1/chat/completions', async (c) => {
               session_id: sessionId,
               agent_id: agentId,
               upstream: upstream.label,
-              gateway: 'phaseone-core/0.7.0',
+              gateway: 'phaseone-core/0.8.0-pre',
             },
           }
         : data;
@@ -507,9 +508,10 @@ registerPhase3Routes(app, cfg);
 registerPhase4Routes(app, cfg);
 registerPhase5Routes(app, cfg);
 registerPhase7Routes(app, cfg);
+registerGatekeeperRoutes(app, cfg);
 
 const port = cfg.port;
-console.log(`PhaseOne10841 Agent Security Gateway v0.7.0 — Veracity Integrity LLC`);
+console.log(`PhaseOne10841 Agent Security Gateway v0.8.0-pre — Veracity Integrity LLC`);
 console.log(`Listening on :${port} (upstream=${resolveUpstream(cfg).label}) · https://VeracityIntegrity.com`);
 serve({ fetch: app.fetch, port, hostname: '0.0.0.0' });
 

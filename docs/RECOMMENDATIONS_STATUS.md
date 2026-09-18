@@ -1,8 +1,8 @@
-﻿# Phase 8 Approved Recommendations — Status Tracker
+# Phase 8 Approved Recommendations — Status Tracker
 
 **Approved by Ryan:** 2026-09-17  
-**Current version:** v0.7.0 (Phase 7 shipped)  
-**Phase 8 status:** Planning complete, implementation pending
+**Current version:** v0.8.0-pre (Phase 8 Wave A shipped)  
+**Phase 8 status:** Wave A complete, Wave B/C pending
 
 ---
 
@@ -15,57 +15,62 @@
 
 | # | Recommendation | Status | Wave | Notes |
 |---|----------------|--------|------|-------|
-| 1 | Finish real IdP for OIDC/SSO | **Planned** | A | Demo-critical; enterprise auth |
+| 1 | Finish real IdP for OIDC/SSO | **DONE** ✅ | A | Okta/Azure AD/Auth0 support |
 | 2 | Playbook effectiveness / learn loop | **Planned** | B | Human-gated suggestions |
 | 3 | Full MCP wire proxy (selective) | **Planned** | B | Trusted MCP servers only |
 | 4 | Operator MCP (read-mostly) | **Planned** | C | Management MCP; write requires MFA |
 | 5 | Kubernetes Helm + operator path | **Planned** | C | Helm chart + CronJobs |
 | 6 | Multi-tenant org controls | **Planned** | C | Orgs, scoped policy/audit |
 | 7 | Signed canary packages | **Planned** | B | Ed25519 signatures + SIEM provenance |
-| 8 | Packaged SDKs (npm + PyPI) | **Planned** | A | Official clients with enforce helpers |
-| 9 | Gatekeeper blast-radius & simulation | **Planned** | A | Pre-flight simulation + rate caps |
+| 8 | Packaged SDKs (npm + PyPI) | **DONE** ✅ | A | @phaseone/client, phaseone-client |
+| 9 | Gatekeeper blast-radius & simulation | **DONE** ✅ | A | API, CLI, rate caps, dashboard |
 
 ---
 
-## Detailed status
+## Phase 8 Wave A — COMPLETE (v0.8.0-pre)
 
-### Wave A — Sales/demo leverage
+### #1 OIDC/SSO — DONE ✅
+- Callback handler with state/nonce validation
+- Token exchange with PKCE support
+- Session binding with IdP identity and role claims
+- Logout with IdP end-session support
+- Dashboard IdP status panel
+- Documentation: `docs/oidc-setup.md`
+- Unit tests: `tests/oidc.test.ts`
 
-#### 1. Finish real IdP for OIDC/SSO
-- **Status:** Planned
-- **Approved:** Ryan 2026-09-17
-- **Dependencies:** None (builds on Phase 6 OIDC stub)
-- **Demo value:** High — enterprise customers require SSO
+### #9 Gatekeeper Simulation — DONE ✅
+- API: `POST /v1/phaseone/gatekeeper/simulate`
+- Blast-radius summary calculation
+- Rate caps + cooldowns configuration
+- CLI: `npm run phaseone -- gatekeeper simulate`
+- Dashboard simulation controls
+- Unit tests: `tests/gatekeeper.test.ts`
 
-#### 9. Gatekeeper blast-radius & simulation
-- **Status:** Planned
-- **Approved:** Ryan 2026-09-17
-- **Dependencies:** Phase 7 gatekeeper (complete)
-- **Demo value:** High — shows operational safety
-
-#### 8. Packaged SDKs (npm + PyPI)
-- **Status:** Planned
-- **Approved:** Ryan 2026-09-17
-- **Dependencies:** Stable gateway API (complete)
-- **Demo value:** High — easy integration story
+### #8 Packaged SDKs — DONE ✅
+- `packages/sdk-js/` — `@phaseone/client` TypeScript SDK
+- `packages/sdk-python/` — `phaseone-client` Python SDK
+- Features: gateway URL, headers, enforce(), scan(), chat helpers
+- Documentation: `docs/sdk-js.md`, `docs/sdk-python.md`
+- CI workflows: `.github/workflows/publish-sdk-*.yml` (manual dispatch)
+- Tests: `packages/sdk-js/src/index.test.ts`, `packages/sdk-python/tests/test_client.py`
 
 ---
 
-### Wave B — Defense depth
+## Wave B — Defense depth (Planned)
 
-#### 2. Playbook effectiveness / learn loop
+### 2. Playbook effectiveness / learn loop
 - **Status:** Planned
 - **Approved:** Ryan 2026-09-17
 - **Dependencies:** Phase 7 playbooks (complete)
 - **Demo value:** Medium — operational maturity
 
-#### 3. Full MCP wire proxy (selective)
+### 3. Full MCP wire proxy (selective)
 - **Status:** Planned
 - **Approved:** Ryan 2026-09-17
 - **Dependencies:** Existing `mcp_call` enforce (complete)
 - **Demo value:** Medium — MCP ecosystem integration
 
-#### 7. Signed canary packages
+### 7. Signed canary packages
 - **Status:** Planned
 - **Approved:** Ryan 2026-09-17
 - **Dependencies:** Existing canary system (complete)
@@ -73,25 +78,33 @@
 
 ---
 
-### Wave C — Platform scale
+## Wave C — Platform scale (Planned)
 
-#### 4. Operator MCP (read-mostly)
+### 4. Operator MCP (read-mostly)
 - **Status:** Planned
 - **Approved:** Ryan 2026-09-17
 - **Dependencies:** Gatekeeper API (complete)
 - **Demo value:** Medium — operator agent automation
 
-#### 5. Kubernetes Helm + operator path
+### 5. Kubernetes Helm + operator path
 - **Status:** Planned
 - **Approved:** Ryan 2026-09-17
 - **Dependencies:** Docker deployment (complete)
 - **Demo value:** High for enterprise — k8s required
 
-#### 6. Multi-tenant org controls
+### 6. Multi-tenant org controls
 - **Status:** Planned
 - **Approved:** Ryan 2026-09-17
 - **Dependencies:** RBAC (complete), audit (complete)
 - **Demo value:** High for enterprise — SaaS readiness
+
+---
+
+## Login (Phase 1-7 ops)
+
+Use **techpronow@gmail.com** (must be on `PHASEONE_ADMIN_EMAILS`). OTP arrives from **noreply@clovisstar.com** — check Inbox and Spam.
+
+**OIDC/SSO (v0.8.0+)**: Configure `PHASEONE_OIDC_*` env vars for enterprise SSO. See `docs/oidc-setup.md`.
 
 ---
 
@@ -108,6 +121,7 @@
 | Date | Change |
 |------|--------|
 | 2026-09-17 | Initial Phase 8 planning; all items set to Planned |
+| 2026-09-17 | Wave A complete: OIDC/SSO, Gatekeeper simulation, Packaged SDKs |
 
 ---
 

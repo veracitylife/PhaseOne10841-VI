@@ -1,9 +1,12 @@
 /**
- * Dashboard MFA — email one-time verification codes.
+ * Dashboard MFA — email one-time verification codes + OIDC/SSO.
  * DEFENSIVE admin gate only. No real secrets committed.
  *
  * Lab/CI only: when SMTP is unset, OTP is logged to console + PHASEONE_OTP_FALLBACK_FILE
  * with a loud warning. Production must use SMTP (From: noreply@clovisstar.com).
+ * 
+ * OIDC/SSO: Optional enterprise SSO via Okta, Azure AD, Auth0, etc.
+ * Configure via PHASEONE_OIDC_* env vars. See docs/oidc-setup.md.
  */
 
 import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
@@ -15,6 +18,21 @@ import {
   isAuthorizedEmail,
   type DashboardRole,
 } from '../../shared/src/rbac.js';
+import {
+  loadOidcConfig,
+  isOidcEnabled,
+  createPendingAuth,
+  consumePendingAuth,
+  buildAuthorizationUrl,
+  exchangeCodeForTokens,
+  fetchUserInfo,
+  parseIdToken,
+  validateIdTokenClaims,
+  resolveRoleFromClaims,
+  buildLogoutUrl,
+  type OidcConfig,
+  type OidcUserInfo,
+} from '../../shared/src/oidc.js';
 
 export interface AuthConfig {
   enabled: boolean;
@@ -51,6 +69,14 @@ export interface SessionRecord {
   createdAt: number;
   expiresAt: number;
   csrfToken: string;
+  /** Auth method: 'otp' for email OTP, 'oidc' for SSO */
+  authMethod?: 'otp' | 'oidc';
+  /** OIDC IdP subject identifier */
+  idpSubject?: string;
+  /** OIDC ID token for logout */
+  idToken?: string;
+  /** OIDC user info */
+  oidcUserInfo?: OidcUserInfo;
 }
 
 export interface OtpRecord {
@@ -319,10 +345,22 @@ export function verifyOtp(
   return { ok: true, session };
 }
 
-export function createSession(email: string, cfg = loadAuthConfig()): SessionRecord {
+export interface CreateSessionOptions {
+  authMethod?: 'otp' | 'oidc';
+  idpSubject?: string;
+  idToken?: string;
+  oidcUserInfo?: OidcUserInfo;
+  roleOverride?: DashboardRole;
+}
+
+export function createSession(
+  email: string,
+  cfg = loadAuthConfig(),
+  opts: CreateSessionOptions = {}
+): SessionRecord {
   const id = randomBytes(24).toString('hex');
   const csrfToken = randomBytes(16).toString('hex');
-  const role = roleForEmail(email, cfg);
+  const role = opts.roleOverride ?? roleForEmail(email, cfg);
   const rec: SessionRecord = {
     id,
     email: email.toLowerCase(),
@@ -330,6 +368,10 @@ export function createSession(email: string, cfg = loadAuthConfig()): SessionRec
     createdAt: Date.now(),
     expiresAt: Date.now() + cfg.sessionTtlMs,
     csrfToken,
+    authMethod: opts.authMethod ?? 'otp',
+    idpSubject: opts.idpSubject,
+    idToken: opts.idToken,
+    oidcUserInfo: opts.oidcUserInfo,
   };
   sessions.set(id, rec);
   return rec;
@@ -401,6 +443,170 @@ export function validateCsrf(
   return cookieToken === session.csrfToken;
 }
 
+/**
+ * OIDC/SSO Authentication
+ */
+
+export { loadOidcConfig, isOidcEnabled } from '../../shared/src/oidc.js';
+export type { OidcConfig, OidcUserInfo } from '../../shared/src/oidc.js';
+
+export interface OidcAuthInitResult {
+  ok: boolean;
+  authUrl?: string;
+  error?: string;
+}
+
+export async function initiateOidcAuth(returnUrl?: string): Promise<OidcAuthInitResult> {
+  const cfg = loadOidcConfig();
+  if (!isOidcEnabled(cfg)) {
+    return { ok: false, error: 'OIDC is not configured' };
+  }
+  try {
+    const pending = createPendingAuth(cfg, returnUrl);
+    const authUrl = await buildAuthorizationUrl(cfg, pending);
+    return { ok: true, authUrl };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Failed to initiate OIDC auth' };
+  }
+}
+
+export interface OidcCallbackResult {
+  ok: boolean;
+  session?: SessionRecord;
+  error?: string;
+  returnUrl?: string;
+}
+
+export async function handleOidcCallback(
+  code: string,
+  state: string,
+  authCfg = loadAuthConfig()
+): Promise<OidcCallbackResult> {
+  const oidcCfg = loadOidcConfig();
+  if (!isOidcEnabled(oidcCfg)) {
+    return { ok: false, error: 'OIDC is not configured' };
+  }
+
+  // Validate and consume pending auth state
+  const pending = consumePendingAuth(state);
+  if (!pending) {
+    return { ok: false, error: 'Invalid or expired state parameter' };
+  }
+
+  try {
+    // Exchange authorization code for tokens
+    const tokens = await exchangeCodeForTokens(oidcCfg, code, pending.codeVerifier);
+
+    let userInfo: OidcUserInfo;
+    let idToken = tokens.id_token;
+
+    // Parse and validate ID token if present
+    if (idToken) {
+      const parsed = parseIdToken(idToken);
+      const validation = validateIdTokenClaims(parsed.payload, oidcCfg, pending.nonce);
+      if (!validation.valid) {
+        return { ok: false, error: validation.error };
+      }
+      userInfo = parsed.payload;
+    } else {
+      // Fallback to userinfo endpoint
+      userInfo = await fetchUserInfo(oidcCfg, tokens.access_token);
+    }
+
+    // Extract email from userinfo
+    const email = userInfo.email ?? userInfo.preferred_username ?? userInfo.sub;
+    if (!email) {
+      return { ok: false, error: 'No email found in IdP response' };
+    }
+
+    // Resolve role from IdP claims (priority) or fallback to email-based role
+    let role = resolveRoleFromClaims(userInfo, oidcCfg);
+    
+    // If OIDC SSO-only mode is not enabled, verify email is in allowlist
+    if (!oidcCfg.ssoOnly) {
+      if (!isEmailAllowlisted(email, authCfg)) {
+        return { ok: false, error: 'Email not authorized for dashboard access' };
+      }
+      // Use email-based role if no role found from claims
+      if (role === 'none') {
+        role = roleForEmail(email, authCfg);
+      }
+    }
+
+    // Ensure at minimum a viewer role
+    if (role === 'none') {
+      role = oidcCfg.defaultRole ?? 'viewer';
+    }
+
+    // Create session with OIDC metadata
+    const session = createSession(email, authCfg, {
+      authMethod: 'oidc',
+      idpSubject: userInfo.sub,
+      idToken,
+      oidcUserInfo: userInfo,
+      roleOverride: role,
+    });
+
+    return {
+      ok: true,
+      session,
+      returnUrl: pending.returnUrl,
+    };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'OIDC callback failed' };
+  }
+}
+
+export interface OidcLogoutResult {
+  ok: boolean;
+  logoutUrl?: string;
+  error?: string;
+}
+
+export async function handleOidcLogout(
+  sessionId: string,
+  postLogoutRedirectUri?: string
+): Promise<OidcLogoutResult> {
+  const session = getSession(sessionId);
+  if (!session) {
+    return { ok: true }; // Already logged out
+  }
+
+  const oidcCfg = loadOidcConfig();
+  
+  // Destroy local session first
+  destroySession(sessionId);
+
+  // If this was an OIDC session, try to build IdP logout URL
+  if (session.authMethod === 'oidc' && isOidcEnabled(oidcCfg)) {
+    try {
+      const logoutUrl = await buildLogoutUrl(oidcCfg, session.idToken, postLogoutRedirectUri);
+      if (logoutUrl) {
+        return { ok: true, logoutUrl };
+      }
+    } catch (err) {
+      console.warn('[PhaseOne OIDC] Failed to build logout URL:', err);
+    }
+  }
+
+  return { ok: true };
+}
+
+export function getOidcStatus(): {
+  enabled: boolean;
+  issuer?: string;
+  ssoOnly: boolean;
+  hasPkce: boolean;
+} {
+  const cfg = loadOidcConfig();
+  return {
+    enabled: isOidcEnabled(cfg),
+    issuer: cfg.issuer || undefined,
+    ssoOnly: cfg.ssoOnly,
+    hasPkce: cfg.usePkce,
+  };
+}
+
 /** CI harness helpers */
 export function __testGetLastOtp(): { email: string; code: string; at: number } | null {
   return lastTestOtp;
@@ -415,4 +621,8 @@ export function __testResetAuthState(): void {
 
 export function __testPeekOtp(email: string): string | undefined {
   return otps.get(email.toLowerCase())?.codePlain;
+}
+
+export function __testGetSession(sessionId: string): SessionRecord | null {
+  return sessions.get(sessionId) ?? null;
 }
