@@ -20,7 +20,10 @@ import {
   rotateCanary,
   noteCanaryTrigger,
   matchCanariesRuntime,
+  signAllCanaries,
+  verifyAllCanaries,
 } from '../../../canaries/src/manager.js';
+import { getPublicKeyInfo, ensureCanaryKeys } from '../../../shared/src/canary-sign.js';
 import {
   validatePolicyYaml,
   savePolicyYaml,
@@ -145,6 +148,36 @@ export function registerPhase4Routes(app: Hono, cfg: GatewayConfig): void {
       Metrics.canary();
     }
     return c.json({ hits, count: hits.length });
+  });
+
+  /** Signed canary verify / sign (Wave B #7) */
+  app.get('/v1/phaseone/canaries/verify', (c) => {
+    const results = verifyAllCanaries();
+    const invalid = results.filter((r) => r.valid === false);
+    const unsigned = results.filter((r) => r.valid === null);
+    return c.json({
+      ok: invalid.length === 0,
+      results,
+      invalid_count: invalid.length,
+      unsigned_count: unsigned.length,
+      public_key: getPublicKeyInfo(),
+      note: 'Tamper detection is warn-oriented on first run; never blocks gateway startup.',
+    });
+  });
+
+  app.post('/v1/phaseone/canaries/sign', async (c) => {
+    ensureCanaryKeys();
+    const result = signAllCanaries();
+    const body = (await c.req.json().catch(() => ({}))) as { actor_email?: string };
+    if (body.actor_email) {
+      await recordAudit({
+        actor_email: body.actor_email,
+        action: 'canary.sign',
+        resource: result.key_id,
+        detail: { signed: result.signed },
+      });
+    }
+    return c.json({ ok: true, ...result });
   });
 
   /** Admin audit log */

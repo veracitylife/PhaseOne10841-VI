@@ -1,8 +1,8 @@
 # Phase 8 Approved Recommendations — Status Tracker
 
 **Approved by Ryan:** 2026-09-17  
-**Current version:** v0.8.0-pre (Phase 8 Wave A shipped)  
-**Phase 8 status:** Wave A complete, Wave B/C pending
+**Current version:** v0.8.0 (Phase 8 Waves A–C shipped)  
+**Phase 8 status:** Complete
 
 ---
 
@@ -16,18 +16,18 @@
 | # | Recommendation | Status | Wave | Notes |
 |---|----------------|--------|------|-------|
 | 1 | Finish real IdP for OIDC/SSO | **DONE** ✅ | A | Okta/Azure AD/Auth0 support |
-| 2 | Playbook effectiveness / learn loop | **Planned** | B | Human-gated suggestions |
-| 3 | Full MCP wire proxy (selective) | **Planned** | B | Trusted MCP servers only |
-| 4 | Operator MCP (read-mostly) | **Planned** | C | Management MCP; write requires MFA |
-| 5 | Kubernetes Helm + operator path | **Planned** | C | Helm chart + CronJobs |
-| 6 | Multi-tenant org controls | **Planned** | C | Orgs, scoped policy/audit |
-| 7 | Signed canary packages | **Planned** | B | Ed25519 signatures + SIEM provenance |
+| 2 | Playbook effectiveness / learn loop | **DONE** ✅ | B | Human-gated suggestions |
+| 3 | Full MCP wire proxy (selective) | **DONE** ✅ | B | Trusted MCP servers only |
+| 4 | Operator MCP (read-mostly) | **DONE** ✅ | C | Management MCP; write requires token/MFA |
+| 5 | Kubernetes Helm + operator path | **DONE** ✅ | C | Helm chart + Kustomize + CronJobs |
+| 6 | Multi-tenant org controls | **DONE** ✅ | C | Orgs, scoped policy/audit |
+| 7 | Signed canary packages | **DONE** ✅ | B | Ed25519 signatures + SIEM provenance |
 | 8 | Packaged SDKs (npm + PyPI) | **DONE** ✅ | A | @phaseone/client, phaseone-client |
 | 9 | Gatekeeper blast-radius & simulation | **DONE** ✅ | A | API, CLI, rate caps, dashboard |
 
 ---
 
-## Phase 8 Wave A — COMPLETE (v0.8.0-pre)
+## Phase 8 Wave A — COMPLETE (v0.8.0-pre → v0.8.0)
 
 ### #1 OIDC/SSO — DONE ✅
 - Callback handler with state/nonce validation
@@ -56,47 +56,47 @@
 
 ---
 
-## Wave B — Defense depth (Planned)
+## Wave B — Defense depth — COMPLETE
 
-### 2. Playbook effectiveness / learn loop
-- **Status:** Planned
-- **Approved:** Ryan 2026-09-17
-- **Dependencies:** Phase 7 playbooks (complete)
-- **Demo value:** Medium — operational maturity
+### 2. Playbook effectiveness / learn loop — DONE ✅
+- `playbook_outcomes` table (`db/migrations/004_phase8.sql`)
+- Outcomes recorded on gatekeeper confirm/deny
+- API: `GET /v1/phaseone/gatekeeper/effectiveness` (+ export)
+- Dashboard **Learn** tab; CLI `phaseone gatekeeper effectiveness`
+- Suggestions require human approval (never auto-applied)
 
-### 3. Full MCP wire proxy (selective)
-- **Status:** Planned
-- **Approved:** Ryan 2026-09-17
-- **Dependencies:** Existing `mcp_call` enforce (complete)
-- **Demo value:** Medium — MCP ecosystem integration
+### 3. Full MCP wire proxy (selective) — DONE ✅
+- `POST /v1/mcp/proxy` with allowlist from policy `mcp.allow_servers`
+- Policy enforce on `tools/call`; injection scan on results
+- Audit `event_type: mcp_proxy`; stub mode when upstream URLs unset
+- Allowlist: `GET /v1/mcp/proxy/allowlist`
 
-### 7. Signed canary packages
-- **Status:** Planned
-- **Approved:** Ryan 2026-09-17
-- **Dependencies:** Existing canary system (complete)
-- **Demo value:** Medium — production hardening
+### 7. Signed canary packages — DONE ✅
+- Ed25519 keypair via onboard / `ensureCanaryKeys`
+- Sign on create/rotate; `phaseone canary verify|sign`
+- SIEM `phaseone.canary_signature` field
+- Warn-oriented verify (does not block startup)
 
 ---
 
-## Wave C — Platform scale (Planned)
+## Wave C — Platform scale — COMPLETE
 
-### 4. Operator MCP (read-mostly)
-- **Status:** Planned
-- **Approved:** Ryan 2026-09-17
-- **Dependencies:** Gatekeeper API (complete)
-- **Demo value:** Medium — operator agent automation
+### 4. Operator MCP (read-mostly) — DONE ✅
+- `mcp-server/` JSON-RPC on localhost:8090
+- Read tools: health, gatekeeper status, pending, metrics, recent events
+- Write tools require `X-PhaseOne-Admin-Token` + documented MFA/RBAC
+- Docs: `docs/operator-mcp.md`
 
-### 5. Kubernetes Helm + operator path
-- **Status:** Planned
-- **Approved:** Ryan 2026-09-17
-- **Dependencies:** Docker deployment (complete)
-- **Demo value:** High for enterprise — k8s required
+### 5. Kubernetes Helm + operator path — DONE ✅
+- `deploy/helm/phaseone/` chart with probes, CronJobs, Secrets
+- Kustomize overlays: dev / staging / prod
+- Docs: `docs/kubernetes.md`
 
-### 6. Multi-tenant org controls
-- **Status:** Planned
-- **Approved:** Ryan 2026-09-17
-- **Dependencies:** RBAC (complete), audit (complete)
-- **Demo value:** High for enterprise — SaaS readiness
+### 6. Multi-tenant org controls — DONE ✅
+- `orgs` + `org_api_keys` tables; `org_id` on agents/sessions/events
+- Org-scoped policy/playbooks path resolution
+- `org_admin` vs `global_admin`; `/v1/orgs/:orgId/...` APIs
+- Soft-delete orgs; scoped event queries
 
 ---
 
@@ -122,6 +122,7 @@ Use **techpronow@gmail.com** (must be on `PHASEONE_ADMIN_EMAILS`). OTP arrives f
 |------|--------|
 | 2026-09-17 | Initial Phase 8 planning; all items set to Planned |
 | 2026-09-17 | Wave A complete: OIDC/SSO, Gatekeeper simulation, Packaged SDKs |
+| 2026-09-18 | Wave B+C complete; public-source README/website; v0.8.0 |
 
 ---
 

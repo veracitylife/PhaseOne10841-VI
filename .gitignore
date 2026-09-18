@@ -11,3 +11,4 @@ coverage/
 backups/*
 !backups/.gitkeep
 .env.bak.*
+canaries/.keys/

@@ -239,6 +239,42 @@ export function registerGatekeeperRoutes(app: Hono, cfg: GatewayConfig): void {
         enabled: true,
         endpoint: '/v1/phaseone/gatekeeper/blast-radius',
       },
+      learn_loop: {
+        enabled: true,
+        endpoint: '/v1/phaseone/gatekeeper/effectiveness',
+      },
+    });
+  });
+
+  /**
+   * GET /v1/phaseone/gatekeeper/effectiveness
+   * Playbook learn-loop metrics + human-gated suggestions.
+   */
+  app.get('/v1/phaseone/gatekeeper/effectiveness', async (c) => {
+    const { getEffectivenessReport } = await import('../../../shared/src/playbook-learn.js');
+    const days = Number(c.req.query('days') ?? 7);
+    const playbookId = c.req.query('playbook_id') ?? undefined;
+    const report = await getEffectivenessReport({ days, playbook_id: playbookId });
+    return c.json({
+      ok: true,
+      product: 'PhaseOne10841',
+      ...report,
+      note: 'Suggestions require human review before applying — never auto-applied.',
+    });
+  });
+
+  /**
+   * GET /v1/phaseone/gatekeeper/effectiveness/export
+   * Export effectiveness data for offline analysis.
+   */
+  app.get('/v1/phaseone/gatekeeper/effectiveness/export', async (c) => {
+    const { getEffectivenessReport } = await import('../../../shared/src/playbook-learn.js');
+    const days = Number(c.req.query('days') ?? 30);
+    const report = await getEffectivenessReport({ days });
+    const body = JSON.stringify(report, null, 2);
+    return c.body(body, 200, {
+      'content-type': 'application/json',
+      'content-disposition': 'attachment; filename="phaseone-playbook-effectiveness.json"',
     });
   });
 }
