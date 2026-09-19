@@ -90,7 +90,7 @@ export function registerMcpProxyRoutes(app: Hono, _cfg: GatewayConfig): void {
       await recordEvent({
         session_id: sessionId,
         agent_id: agentId,
-        event_type: 'mcp_proxy',
+        event_type: 'mcp.proxy',
         severity: 'high',
         decision: 'deny',
         decision_reason: `MCP server not allowlisted: ${server}`,
@@ -123,7 +123,7 @@ export function registerMcpProxyRoutes(app: Hono, _cfg: GatewayConfig): void {
         await recordEvent({
           session_id: sessionId,
           agent_id: agentId,
-          event_type: 'mcp_proxy',
+          event_type: 'mcp.proxy',
           severity: 'high',
           tool_name: toolName,
           decision: 'deny',
@@ -186,7 +186,7 @@ export function registerMcpProxyRoutes(app: Hono, _cfg: GatewayConfig): void {
       await recordEvent({
         session_id: sessionId,
         agent_id: agentId,
-        event_type: 'mcp_proxy',
+        event_type: 'mcp.proxy',
         severity: scan.blocked ? 'high' : 'info',
         tool_name: toolName,
         decision: scan.blocked ? 'deny' : 'allow',
@@ -243,7 +243,7 @@ export function registerMcpProxyRoutes(app: Hono, _cfg: GatewayConfig): void {
       await recordEvent({
         session_id: sessionId,
         agent_id: agentId,
-        event_type: 'mcp_proxy',
+        event_type: 'mcp.proxy',
         severity: scan.blocked || !res.ok ? 'high' : 'info',
         tool_name: toolName,
         destination: upstreamUrl,
@@ -273,7 +273,7 @@ export function registerMcpProxyRoutes(app: Hono, _cfg: GatewayConfig): void {
       await recordEvent({
         session_id: sessionId,
         agent_id: agentId,
-        event_type: 'mcp_proxy',
+        event_type: 'mcp.proxy',
         severity: 'high',
         tool_name: toolName,
         decision: 'deny',

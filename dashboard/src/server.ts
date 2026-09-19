@@ -48,7 +48,7 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const GATEWAY_URL = process.env.GATEWAY_URL ?? 'http://gateway:8080';
 const PORT = Number(process.env.DASHBOARD_PORT ?? 3000);
-const VERSION = '0.1.1';
+const VERSION = '0.1.2';
 
 const app = new Hono();
 const authCfg = loadAuthConfig();

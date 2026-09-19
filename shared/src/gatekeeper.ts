@@ -86,7 +86,7 @@ export interface RateCapConfig {
   /** Global circuit breaker threshold */
   circuit_breaker_threshold: number;
   /** Circuit breaker cooldown ms */
-  circuit_breaker_cooldown_ms: number;
+  circuit_breaker_cooldown_ms?: number;
 }
 
 export interface RateCapState {
@@ -128,6 +128,7 @@ export function checkRateCap(
   cfg = loadRateCapConfig()
 ): { allowed: boolean; reason?: string; retry_after_ms?: number } {
   const now = Date.now();
+  const circuitBreakerCooldownMs = cfg.circuit_breaker_cooldown_ms ?? 300_000;
 
   // Circuit breaker check
   if (rateCapState.circuit_breaker_tripped) {
@@ -179,11 +180,11 @@ export function checkRateCap(
   // Check circuit breaker threshold
   if (rateCapState.actions.length >= cfg.circuit_breaker_threshold) {
     rateCapState.circuit_breaker_tripped = true;
-    rateCapState.circuit_breaker_until = now + cfg.circuit_breaker_cooldown_ms;
+    rateCapState.circuit_breaker_until = now + circuitBreakerCooldownMs;
     return {
       allowed: false,
       reason: 'Circuit breaker triggered',
-      retry_after_ms: cfg.circuit_breaker_cooldown_ms,
+      retry_after_ms: circuitBreakerCooldownMs,
     };
   }
 

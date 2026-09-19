@@ -12,8 +12,69 @@ import {
   getOIDCStatus,
   describeOIDCConfig,
   createOIDCAuthorizationUrl,
+  buildAuthorizationUrl,
+  exchangeCodeForTokens,
+  fetchUserInfo,
+  buildLogoutUrl,
   __testResetOIDCState,
 } from '../shared/src/oidc.js';
+
+describe('OIDC shared authorization helpers', () => {
+  const cfg = {
+    ...loadOIDCConfig(),
+    enabled: true,
+    issuer: 'https://idp.example.test',
+    clientId: 'phaseone-client',
+    clientSecret: 'test-only-secret',
+    redirectUri: 'https://app.example.test/callback',
+    scopes: ['openid', 'email'],
+    usePkce: true,
+    endSessionEndpoint: 'https://idp.example.test/logout',
+  };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    __testResetOIDCState();
+  });
+
+  it('builds an authorization URL with state, nonce, and PKCE', () => {
+    const pending = createPendingAuth(cfg);
+    const url = new URL(buildAuthorizationUrl(cfg, pending));
+    expect(url.searchParams.get('state')).toBe(pending.state);
+    expect(url.searchParams.get('nonce')).toBe(pending.nonce);
+    expect(url.searchParams.get('code_challenge')).toBe(pending.codeChallenge);
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+  });
+
+  it('exchanges a code and fetches an identified user over the configured endpoints', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'access', token_type: 'Bearer' })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ sub: 'subject-1', email: 'user@example.test' })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const tokens = await exchangeCodeForTokens(cfg, 'auth-code', 'pkce-verifier');
+    const user = await fetchUserInfo(cfg, tokens.access_token);
+
+    expect(tokens.access_token).toBe('access');
+    expect(user).toMatchObject({ sub: 'subject-1', email: 'user@example.test' });
+    expect(fetchMock.mock.calls[0][0]).toBe('https://idp.example.test/oauth/token');
+    expect(fetchMock.mock.calls[1][1]?.headers).toMatchObject({ Authorization: 'Bearer access' });
+  });
+
+  it('rejects userinfo without the required subject claim', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ email: 'user@example.test' }))));
+    await expect(fetchUserInfo(cfg, 'access')).rejects.toThrow('did not include a subject');
+  });
+
+  it('builds a logout URL only when an end-session endpoint exists', () => {
+    const logoutUrl = buildLogoutUrl(cfg, 'id-token-hint', 'https://app.example.test/');
+    expect(logoutUrl).not.toBeNull();
+    const url = new URL(logoutUrl!);
+    expect(url.searchParams.get('id_token_hint')).toBe('id-token-hint');
+    expect(url.searchParams.get('post_logout_redirect_uri')).toBe('https://app.example.test/');
+    expect(buildLogoutUrl({ ...cfg, endSessionEndpoint: undefined })).toBeNull();
+  });
+});
 
 describe('OIDC config loading', () => {
   const originalEnv = { ...process.env };

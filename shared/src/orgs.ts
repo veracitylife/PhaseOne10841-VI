@@ -8,11 +8,11 @@ import { getPool } from '../../recorder/src/db.js';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-async function query<T extends Record<string, unknown> = Record<string, unknown>>(
+async function query<T extends object = Record<string, unknown>>(
   sql: string,
   params: unknown[] = []
 ): Promise<{ rows: T[] }> {
-  return getPool().query(sql, params) as Promise<{ rows: T[] }>;
+  return getPool().query(sql, params) as unknown as Promise<{ rows: T[] }>;
 }
 
 export interface OrgRecord {

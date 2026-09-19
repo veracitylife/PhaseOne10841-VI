@@ -472,6 +472,82 @@ export function createPendingAuth(cfg: OidcConfig, returnUrl?: string): PendingO
   return pending;
 }
 
+/** Build the provider redirect URL from a previously-created, one-time state. */
+export function buildAuthorizationUrl(cfg: OidcConfig, pending: PendingOidcAuth): string {
+  const endpoint = cfg.authorizationEndpoint ?? `${cfg.issuer.replace(/\/$/, '')}/authorize`;
+  const url = new URL(endpoint);
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('client_id', cfg.clientId);
+  url.searchParams.set('redirect_uri', cfg.redirectUri);
+  url.searchParams.set('scope', cfg.scopes.join(' '));
+  url.searchParams.set('state', pending.state);
+  url.searchParams.set('nonce', pending.nonce);
+  if (pending.codeChallenge) {
+    url.searchParams.set('code_challenge', pending.codeChallenge);
+    url.searchParams.set('code_challenge_method', 'S256');
+  }
+  return url.toString();
+}
+
+/** Exchange an authorization code, binding it to the pending PKCE verifier. */
+export async function exchangeCodeForTokens(
+  cfg: OidcConfig,
+  code: string,
+  codeVerifier?: string,
+): Promise<OidcTokenResponse> {
+  const endpoint = cfg.tokenEndpoint ?? `${cfg.issuer.replace(/\/$/, '')}/oauth/token`;
+  const body = new URLSearchParams({
+    grant_type: 'authorization_code',
+    code,
+    redirect_uri: cfg.redirectUri,
+    client_id: cfg.clientId,
+  });
+  if (cfg.clientSecret) body.set('client_secret', cfg.clientSecret);
+  if (codeVerifier) body.set('code_verifier', codeVerifier);
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+  if (!response.ok) throw new Error(`OIDC token exchange failed (HTTP ${response.status})`);
+
+  const tokens = await response.json() as Partial<OidcTokenResponse>;
+  if (typeof tokens.access_token !== 'string' || tokens.access_token.length === 0) {
+    throw new Error('OIDC token response did not include an access token');
+  }
+  return tokens as OidcTokenResponse;
+}
+
+/** Fetch the authenticated identity over the provider's TLS-protected userinfo endpoint. */
+export async function fetchUserInfo(cfg: OidcConfig, accessToken: string): Promise<OidcUserInfo> {
+  const endpoint = cfg.userinfoEndpoint ?? `${cfg.issuer.replace(/\/$/, '')}/userinfo`;
+  const response = await fetch(endpoint, {
+    headers: { Accept: 'application/json', Authorization: `Bearer ${accessToken}` },
+  });
+  if (!response.ok) throw new Error(`OIDC userinfo request failed (HTTP ${response.status})`);
+
+  const userInfo = await response.json() as Record<string, unknown>;
+  if (typeof userInfo.sub !== 'string' || userInfo.sub.length === 0) {
+    throw new Error('OIDC userinfo response did not include a subject');
+  }
+  return userInfo as OidcUserInfo;
+}
+
+/** Build a provider logout URL when an end-session endpoint is configured. */
+export function buildLogoutUrl(
+  cfg: OidcConfig,
+  idToken?: string,
+  postLogoutRedirectUri?: string,
+): string | null {
+  if (!cfg.endSessionEndpoint) return null;
+  const url = new URL(cfg.endSessionEndpoint);
+  if (idToken) url.searchParams.set('id_token_hint', idToken);
+  if (postLogoutRedirectUri) url.searchParams.set('post_logout_redirect_uri', postLogoutRedirectUri);
+  url.searchParams.set('client_id', cfg.clientId);
+  return url.toString();
+}
+
 /** Get pending auth by state (non-destructive) */
 export function getPendingAuth(state: string): PendingOidcAuth | null {
   const pending = pendingAuths.get(state);

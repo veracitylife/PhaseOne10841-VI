@@ -25,7 +25,7 @@ export type GatekeeperActionType =
 export interface PlaybookMatch {
   rule_id?: string | string[];
   event_type?: string | string[];
-  severity?: 'info' | 'low' | 'medium' | 'high' | 'critical' | string[];
+  severity?: 'info' | 'low' | 'medium' | 'high' | 'critical' | `>=${'info' | 'low' | 'medium' | 'high' | 'critical'}` | string[];
   count?: number;
   window_ms?: number;
   agent_id?: string;

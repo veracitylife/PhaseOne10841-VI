@@ -13,13 +13,13 @@ This guide covers Helm and Kustomize manifests under `deploy/`. All defaults are
 | Kubernetes | 1.25+ recommended |
 | `kubectl` | Configured for your cluster |
 | Helm | 3.10+ (optional; Kustomize-only path available) |
-| Container image | Build or pull `phaseone:0.1.1` from this repository (`Dockerfile` at repo root) |
+| Container image | Build or pull `phaseone:0.1.2` from this repository (`Dockerfile` at repo root) |
 | Postgres | **Production:** managed/external Postgres via `DATABASE_URL`. **Lab:** optional embedded Postgres in Helm (`postgres.enabled: true`) |
 
 Build the image locally:
 
 ```bash
-docker build -t phaseone:0.1.1 .
+docker build -t phaseone:0.1.2 .
 # Push to your registry and set image.repository / image.tag in values
 ```
 
@@ -44,7 +44,7 @@ helm upgrade --install phaseone deploy/helm/phaseone \
 | Area | Default | Notes |
 |------|---------|--------|
 | `replicaCount.gateway` / `dashboard` | `1` | Scale per environment |
-| `image.repository` / `tag` | `phaseone` / `0.1.1` | Point at your registry in prod |
+| `image.repository` / `tag` | `phaseone` / `0.1.2` | Point at your registry in prod |
 | `service.gateway` | ClusterIP `:8080` | Gateway API |
 | `service.dashboard` | ClusterIP `:3000` | Admin console |
 | `ingress.enabled` | `false` | Enable with TLS placeholder secret |
@@ -137,7 +137,7 @@ Run migrations after the database is reachable:
 
 ```bash
 kubectl -n phaseone run migrate --rm -it --restart=Never \
-  --image=phaseone:0.1.1 \
+  --image=phaseone:0.1.2 \
   --env="DATABASE_URL=postgres://..." \
   --command -- tsx db/migrate.ts
 ```

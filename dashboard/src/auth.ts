@@ -26,8 +26,6 @@ import {
   buildAuthorizationUrl,
   exchangeCodeForTokens,
   fetchUserInfo,
-  parseIdToken,
-  validateIdTokenClaims,
   resolveRoleFromClaims,
   buildLogoutUrl,
   type OidcConfig,
@@ -497,21 +495,11 @@ export async function handleOidcCallback(
     // Exchange authorization code for tokens
     const tokens = await exchangeCodeForTokens(oidcCfg, code, pending.codeVerifier);
 
-    let userInfo: OidcUserInfo;
-    let idToken = tokens.id_token;
-
-    // Parse and validate ID token if present
-    if (idToken) {
-      const parsed = parseIdToken(idToken);
-      const validation = validateIdTokenClaims(parsed.payload, oidcCfg, pending.nonce);
-      if (!validation.valid) {
-        return { ok: false, error: validation.error };
-      }
-      userInfo = parsed.payload;
-    } else {
-      // Fallback to userinfo endpoint
-      userInfo = await fetchUserInfo(oidcCfg, tokens.access_token);
-    }
+    // Use the TLS-protected userinfo response for identity and authorization.
+    // The ID token is retained only as a logout hint; parsing its claims without
+    // signature verification must never establish a dashboard session.
+    const userInfo: OidcUserInfo = await fetchUserInfo(oidcCfg, tokens.access_token);
+    const idToken = tokens.id_token;
 
     // Extract email from userinfo
     const email = userInfo.email ?? userInfo.preferred_username ?? userInfo.sub;
@@ -523,7 +511,7 @@ export async function handleOidcCallback(
     let role = resolveRoleFromClaims(userInfo, oidcCfg);
     
     // If OIDC SSO-only mode is not enabled, verify email is in allowlist
-    if (!oidcCfg.ssoOnly) {
+    if (!(oidcCfg.ssoOnly ?? false)) {
       if (!isEmailAllowlisted(email, authCfg)) {
         return { ok: false, error: 'Email not authorized for dashboard access' };
       }
@@ -602,8 +590,8 @@ export function getOidcStatus(): {
   return {
     enabled: isOidcEnabled(cfg),
     issuer: cfg.issuer || undefined,
-    ssoOnly: cfg.ssoOnly,
-    hasPkce: cfg.usePkce,
+    ssoOnly: cfg.ssoOnly ?? false,
+    hasPkce: cfg.usePkce ?? false,
   };
 }
 

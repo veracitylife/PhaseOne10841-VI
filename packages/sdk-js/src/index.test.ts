@@ -260,9 +260,14 @@ describe('PhaseOneClient', () => {
     });
 
     it('uses default API key when not provided', () => {
-      const client = new PhaseOneClient();
-      const config = client.getOpenAIConfig();
-      expect(config.apiKey).toBe('phaseone-unused');
+      vi.stubEnv('OPENAI_API_KEY', '');
+      try {
+        const client = new PhaseOneClient();
+        const config = client.getOpenAIConfig();
+        expect(config.apiKey).toBe('phaseone-unused');
+      } finally {
+        vi.unstubAllEnvs();
+      }
     });
   });
 

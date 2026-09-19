@@ -19,7 +19,7 @@ patches:
 
 images:
   - name: phaseone
-    newTag: "0.1.1"
+    newTag: "0.1.2"
 
 commonLabels:
   environment: dev

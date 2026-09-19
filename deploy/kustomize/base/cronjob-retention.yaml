@@ -29,7 +29,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: retention
-              image: phaseone:0.1.1
+              image: phaseone:0.1.2
               imagePullPolicy: IfNotPresent
               command:
                 - tsx

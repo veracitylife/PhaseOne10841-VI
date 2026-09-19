@@ -10,6 +10,7 @@ export type EventType =
   | 'filesystem.access'
   | 'shell.exec'
   | 'mcp.call'
+  | 'mcp.proxy'
   | 'mcp.denied'
   | 'policy.decision'
   | 'canary.trigger'
