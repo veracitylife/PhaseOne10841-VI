@@ -9,6 +9,8 @@ Watches autonomous agents the way CrowdStrike watches endpoints — **outside** 
 **A product of [Veracity Integrity LLC](https://VeracityIntegrity.com)** · https://VeracityIntegrity.com  
 Website concept: [PhaseOne10841.me](https://phaseone10841.me)
 
+**Full documentation:** [Technical and Deployment Guide](docs/technical-and-deployment-guide.md) — features, architecture, request flow, security boundaries, configuration, Docker Compose, Kubernetes/Helm, and operations.
+
 > **Public source:** This repository is **public** at [github.com/veracitylife/PhaseOne10841-VI](https://github.com/veracitylife/PhaseOne10841-VI). Commercial support, deployment help, and implementation services are available from Veracity Integrity LLC via https://VeracityIntegrity.com.
 
 ---
