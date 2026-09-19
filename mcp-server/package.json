@@ -1,6 +1,6 @@
 {
   "name": "@phaseone/operator-mcp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "PhaseOne10841 Operator MCP — read-mostly management tools for trusted operator agents (DEFENSIVE ONLY)",
   "type": "module",
   "author": "Veracity Integrity LLC <https://VeracityIntegrity.com>",

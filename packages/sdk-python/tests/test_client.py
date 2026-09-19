@@ -72,8 +72,9 @@ class TestPhaseOneClient:
         assert config["api_key"] == "sk-test"
         assert config["default_headers"]["X-PhaseOne-Agent-Id"] == "my-agent"
 
-    def test_get_openai_config_default_api_key(self):
+    def test_get_openai_config_default_api_key(self, monkeypatch):
         """Test default API key in OpenAI config."""
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         client = PhaseOneClient()
         config = client.get_openai_config()
         assert config["api_key"] == "phaseone-unused"

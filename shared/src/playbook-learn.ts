@@ -6,11 +6,11 @@
 
 import { getPool } from '../../recorder/src/db.js';
 
-async function query<T extends Record<string, unknown> = Record<string, unknown>>(
+async function query<T extends object = Record<string, unknown>>(
   sql: string,
   params: unknown[] = []
 ): Promise<{ rows: T[] }> {
-  return getPool().query(sql, params) as Promise<{ rows: T[] }>;
+  return getPool().query(sql, params) as unknown as Promise<{ rows: T[] }>;
 }
 
 export type PlaybookOutcomeType = 'confirmed' | 'denied' | 'auto_resolved' | 'expired';

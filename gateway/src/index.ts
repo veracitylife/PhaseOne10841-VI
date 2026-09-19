@@ -192,7 +192,7 @@ app.post('/v1/chat/completions', async (c) => {
               session_id: sessionId,
               agent_id: agentId,
               upstream: upstream.label,
-              gateway: 'phaseone-core/0.1.1',
+              gateway: 'phaseone-core/0.1.2',
             },
           }
         : data;
@@ -515,7 +515,7 @@ registerMcpProxyRoutes(app, cfg);
 registerOrgRoutes(app, cfg);
 
 const port = cfg.port;
-console.log(`PhaseOne10841 Agent Security Gateway v0.1.1 — Veracity Integrity LLC`);
+console.log(`PhaseOne10841 Agent Security Gateway v0.1.2 — Veracity Integrity LLC`);
 console.log(`Listening on :${port} (upstream=${resolveUpstream(cfg).label}) · https://VeracityIntegrity.com`);
 serve({ fetch: app.fetch, port, hostname: '0.0.0.0' });
 

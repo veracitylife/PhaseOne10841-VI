@@ -1,7 +1,7 @@
 # PhaseOne10841 — Phase 8 Approved Recommendations (1–9)
 
 **Veracity Integrity LLC** · https://VeracityIntegrity.com
-Product: PhaseOne10841ME · **v0.1.1** (Phase 8 complete)
+Product: PhaseOne10841ME · **v0.1.2** (Phase 8 complete)
 All nine items below are **Approved** by Ryan (2026-09-17). Implementation **complete**.
 
 ---

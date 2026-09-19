@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const ROOT = resolve(__dirname, '..');
 
-export const VERSION = '0.1.1';
+export const VERSION = '0.1.2';
 export const PRODUCT_NAME = 'PhaseOne10841';
 export const COMPANY = 'Veracity Integrity LLC';
 export const WEBSITE = 'https://VeracityIntegrity.com';
@@ -64,6 +64,7 @@ export interface CommandDefinition {
 export interface CommandOptions {
   cwd?: string;
   env?: Record<string, string>;
+  json?: boolean;
   timeout?: number;
   onOutput?: (data: string) => void;
   onError?: (data: string) => void;
@@ -1521,12 +1522,12 @@ export const commands: CommandDefinition[] = [
           const events = await listEvents({ eventType: eventType || undefined, limit });
           const simEvents = events.map(e => ({
             id: e.id,
-            timestamp: e.created_at,
+            timestamp: e.timestamp,
             event_type: e.event_type,
             agent_id: e.agent_id,
             session_id: e.session_id,
-            tool_name: e.tool_name,
-            destination: e.destination,
+            tool_name: e.tool_name ?? undefined,
+            destination: e.destination ?? undefined,
           }));
 
           const output = simulateEvents(simEvents, { max_events: limit, event_types: eventType ? [eventType] : undefined });

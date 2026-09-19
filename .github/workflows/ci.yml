@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Test and build JavaScript SDK
+        working-directory: packages/sdk-js
+        run: npm install --no-package-lock && npm test && npm run build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Test and build Python SDK
+        working-directory: packages/sdk-python
+        run: python -m pip install --upgrade build pytest pytest-asyncio respx && python -m pip install -e . && python -m pytest tests/ && python -m build
+      - name: Lint website PHP handlers
+        run: find website -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: Check package version consistency
+        run: node -e "const a=require('./package.json').version,b=require('./package-lock.json').version;if(a!==b)throw new Error('package.json/package-lock.json version mismatch');console.log('Version '+a)"

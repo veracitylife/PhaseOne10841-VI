@@ -18,7 +18,7 @@
   ],
   "scripts": {
     "build": "tsc",
-    "test": "vitest run",
+    "test": "vitest run --config vitest.config.ts",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -34,7 +34,7 @@
   "homepage": "https://VeracityIntegrity.com",
   "repository": {
     "type": "git",
-    "url": "https://github.com/veracityintegrity/phaseone10841",
+    "url": "git+https://github.com/veracitylife/PhaseOne10841-VI.git",
     "directory": "packages/sdk-js"
   },
   "devDependencies": {

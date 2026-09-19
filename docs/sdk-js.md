@@ -3,7 +3,7 @@
 **@phaseone/client** — TypeScript/JavaScript client for the Defensive Agent Security Gateway.
 
 **Veracity Integrity LLC** · https://VeracityIntegrity.com  
-PhaseOne10841 v0.1.1
+PhaseOne10841 v0.1.2
 
 ---
 

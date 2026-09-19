@@ -92,7 +92,7 @@ async function handleRpc(req: IncomingMessage, res: ServerResponse, body: JsonRp
           capabilities: { tools: {} },
           serverInfo: {
             name: '@phaseone/operator-mcp',
-            version: '0.1.1',
+            version: '0.1.2',
             product: 'PhaseOne10841',
             vendor: 'Veracity Integrity LLC',
           },
@@ -144,7 +144,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       ok: true,
       service: 'phaseone-operator-mcp',
       product: 'PhaseOne10841',
-      version: '0.1.1',
+      version: '0.1.2',
       gateway: GATEWAY_URL,
       host: HOST,
       port: PORT,
