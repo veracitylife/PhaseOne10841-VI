@@ -28,7 +28,7 @@ jobs:
       - name: Test and build JavaScript SDK
         working-directory: packages/sdk-js
         run: npm install --no-package-lock && npm test && npm run build
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Test and build Python SDK
