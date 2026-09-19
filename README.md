@@ -1,6 +1,6 @@
 # PhaseOne10841 — Defensive Agent Security Gateway (Agent EDR)
 
-**phaseone-core v0.8.0** (Phase 8 Waves A–C)
+**phaseone-core v0.1.1** (Phase 8 Waves A–C)
 
 Watches autonomous agents the way CrowdStrike watches endpoints — **outside** the agent, not via prompt-only hope.
 
@@ -462,7 +462,7 @@ PhaseOne10841ME/
 
 Commercial support and implementation: https://VeracityIntegrity.com
 
-### Current: v0.8.0 (Phase 8 Waves A–C complete)
+### Current: v0.1.1 (contact and services intake update)
 
 Gatekeeper worker, YAML playbooks, runtime overrides, OIDC/SSO, simulation, SDKs, learn loop, MCP proxy, signed canaries, operator MCP, Helm/K8s, multi-tenant orgs.
 
