@@ -1,50 +1,49 @@
 $ErrorActionPreference = 'Stop'
-$src = 'C:\Users\disru\Documents\PhaseOne10841ME\website'
-if (-not (Test-Path $src)) { throw "Missing $src — CopyFromBox /workspace/PhaseOne10841ME/website/ first" }
-Write-Host "Local website files:"
-Get-ChildItem $src | Format-Table Name, Length
-Write-Host "SSH config alias probe:"
-ssh -G phaseone10841 | Select-String -Pattern '^(host|hostname|user|identityfile|port) '
-Write-Host "Remote public_html before:"
-ssh phaseone10841 'ls -la ~/public_html | head -40'
 
-# Static site files (do NOT overwrite .htaccess wholesale)
-$files = @('index.html','styles.css','script.js','robots.txt','favicon.svg','demo.html','sales.html')
-foreach ($f in $files) {
-  $local = Join-Path $src $f
-  if (-not (Test-Path $local)) { throw "Missing $local" }
-  scp $local "phaseone10841:~/public_html/$f"
-  Write-Host "Uploaded $f"
+# Run from this checked-out repository. SSH uses the configured phaseone10841 key alias.
+$src = $PSScriptRoot
+$hostAlias = 'phaseone10841'
+$targetRoot = '~/public_html'
+$files = @(
+  'index.html', 'demo.html', 'sales.html', 'hire.html', 'hire-submit.php',
+  'contact.html', 'contact-submit.php', 'terms.html', 'styles.css', 'script.js',
+  'robots.txt', 'favicon.svg'
+)
+
+foreach ($file in $files) {
+  $local = Join-Path $src $file
+  if (-not (Test-Path -LiteralPath $local -PathType Leaf)) { throw "Missing website source: $local" }
 }
 
-# Carefully prepend HTTPS rules if not already present (preserve cPanel php blocks)
-$prepend = Join-Path $src 'htaccess.prepend'
-if (Test-Path $prepend) {
-  Write-Host "Ensuring HTTPS rewrite at TOP of remote .htaccess..."
-  scp $prepend "phaseone10841:~/public_html/htaccess.prepend"
-  ssh phaseone10841 @'
-set -e
-cd ~/public_html
-if [ ! -f .htaccess ]; then
-  cp htaccess.prepend .htaccess
-  echo "Created .htaccess from prepend"
-elif grep -q "PhaseOne10841.me HTTPS" .htaccess; then
-  echo "HTTPS block already present — left .htaccess unchanged"
-else
-  cp .htaccess .htaccess.bak.$(date +%Y%m%d%H%M%S)
-  cat htaccess.prepend .htaccess > .htaccess.new
-  mv .htaccess.new .htaccess
-  echo "Prepended HTTPS block; backup saved"
-fi
-rm -f htaccess.prepend
-head -40 .htaccess
-'@
+$stamp = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
+$stage = "$targetRoot/.phaseone-deploy-$stamp"
+$backup = "$targetRoot/backup-files/phaseone-deploy-$stamp"
+$backupName = "backup-files/phaseone-deploy-$stamp"
+
+Write-Host "Target: $hostAlias`:$targetRoot"
+Write-Host "Backup: $backupName"
+Write-Host "Uploading $($files.Count) files to a temporary directory..."
+$prepare = "set -e; root=`"`$HOME/public_html`"; mkdir -p `"`$root/backup-files`" `"`$root/backup-files/phaseone-deploy-$stamp`" `"`$root/.phaseone-deploy-$stamp`"; chmod 700 `"`$root/backup-files`" `"`$root/backup-files/phaseone-deploy-$stamp`" `"`$root/.phaseone-deploy-$stamp`""
+ssh $hostAlias $prepare
+if ($LASTEXITCODE -ne 0) { throw 'Could not prepare the remote staging and backup directories.' }
+
+foreach ($file in $files) {
+  scp -p (Join-Path $src $file) "${hostAlias}:$stage/$file"
+  if ($LASTEXITCODE -ne 0) { throw "Upload failed for $file; live files were not promoted. Staging: $stage" }
 }
 
-Write-Host "Remote public_html after:"
-ssh phaseone10841 'ls -la ~/public_html | head -40'
-Write-Host "Verify:"
-ssh phaseone10841 'head -c 200 ~/public_html/demo.html; echo; head -c 200 ~/public_html/sales.html; echo'
-curl.exe -sS -I https://phaseone10841.me/ | Select-Object -First 12
-curl.exe -sS https://phaseone10841.me/demo.html | Select-String -Pattern 'PhaseOne' | Select-Object -First 3
-curl.exe -sS https://phaseone10841.me/sales.html | Select-String -Pattern 'Early' | Select-Object -First 3
+$fileList = $files -join ' '
+$promote = "set -e; root=`"`$HOME/public_html`"; stage=`"`$root/.phaseone-deploy-$stamp`"; backup=`"`$root/backup-files/phaseone-deploy-$stamp`"; for f in $fileList; do if [ -f `"`$root/`$f`" ]; then cp -p `"`$root/`$f`" `"`$backup/`$f`"; fi; done; for f in $fileList; do mv -f `"`$stage/`$f`" `"`$root/`$f`"; done; rmdir `"`$stage`""
+ssh $hostAlias $promote
+if ($LASTEXITCODE -ne 0) {
+  throw "Remote promotion failed. Backup is $backupName; inspect the live site before retrying."
+}
+
+Write-Host 'Deployment complete. The prior files are in the private backup directory.'
+Write-Host "Rollback example: ssh $hostAlias 'cp -p $backup/index.html $targetRoot/index.html'"
+foreach ($path in @('/', '/contact.html', '/hire.html', '/terms.html')) {
+  $url = "https://phaseone10841.me$path"
+  $status = & curl.exe -sS -o NUL -w '%{http_code}' --max-time 15 $url
+  if ($LASTEXITCODE -ne 0 -or $status -ne '200') { throw "Post-deploy check failed for $url (HTTP $status)" }
+  Write-Host "$url -> HTTP $status"
+}

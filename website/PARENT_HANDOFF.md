@@ -1,39 +1,32 @@
-# Parent handoff — PhaseOne10841.me marketing site (demo + sales)
+# PhaseOne10841.me website deployment
 
-## Built on box (ready)
-`/workspace/PhaseOne10841ME/website/`
-- **New:** `demo.html`, `sales.html`, `htaccess.prepend`
-- **Updated:** `index.html` (Demo/Sales nav + hero CTA), `styles.css` (page-hero, steps, mock-ui, tiers)
-- Unchanged helpers: `script.js`, `robots.txt`, `favicon.svg`, `DEPLOY_FROM_WINDOWS.ps1`
+The public site source is maintained in this repository's `website/` directory.
+The production target is `phaseone10841.me`, served from the cPanel account's
+`public_html` directory on the configured `phaseone10841` SSH alias.
 
-Zip (optional): recreate with
-`cd /workspace && zip -r PhaseOne10841ME-website.zip PhaseOne10841ME/website/`
+## Deploy
 
-## Executor deploy status (this box)
-- **SSH alias `phaseone10841`:** NOT reachable here (`Could not resolve hostname`; no IdentityFile in `~/.ssh`).
-- **machineId `b8727108-a473-4199-acc5-1d2c44176a81`:** not exposed to this subagent (no CopyFromBox/ListMachines/machineId Shell).
-- Public site **already serves HTTPS** for `https://phaseone10841.me/` (200, Apache) but **HTTP does not redirect** yet; **demo/sales are 404** until upload.
+From PowerShell at the repository root:
 
-## Parent: finish deploy
-1. CopyFromBox from `/workspace/PhaseOne10841ME/website/` → Windows path used by deploy script  
-   machineId: `b8727108-a473-4199-acc5-1d2c44176a81`
-2. On Windows Shell(machineId=...), run `DEPLOY_FROM_WINDOWS.ps1` **or**:
-   ```
-   scp index.html styles.css script.js robots.txt favicon.svg demo.html sales.html phaseone10841:~/public_html/
-   ```
-3. Prepend HTTPS rules **without wiping** cPanel php blocks:
-   ```
-   scp htaccess.prepend phaseone10841:~/public_html/
-   ssh phaseone10841 'cd ~/public_html && cp .htaccess .htaccess.bak && cat htaccess.prepend .htaccess > .htaccess.new && mv .htaccess.new .htaccess && rm htaccess.prepend && head -40 .htaccess'
-   ```
-   Skip prepend if remote `.htaccess` already contains `PhaseOne10841.me HTTPS`.
-4. Do **NOT** delete `.htaccess`, `php.ini`, `.well-known`, `cgi-bin`.
-5. Verify:
-   ```
-   curl -I https://phaseone10841.me/
-   curl https://phaseone10841.me/demo.html | grep PhaseOne
-   curl https://phaseone10841.me/sales.html | grep Early
-   curl -I http://phaseone10841.me/   # expect 301 → https after .htaccess
-   ```
+```powershell
+./website/DEPLOY_FROM_WINDOWS.ps1
+```
 
-Domain: **phaseone10841.me ONLY** · Company: Veracity Integrity LLC
+The script validates its source files, stages the site over SSH, makes a private
+timestamped copy of files currently on the server under `public_html/backup-files/`,
+then promotes the new files individually. It checks the homepage, contact, hire,
+and terms pages over HTTPS. It leaves `.htaccess`, PHP configuration, mail routing,
+and unrelated account files untouched.
+
+The forms currently route inquiries to the published `info@veracityintegrity.com` inbox. The requested dedicated `PhaseOneEDR@veracityintegrity.com` forwarding address was not created because cPanel UAPI/permissions are failing; set it up through a repaired cPanel service before changing form routing.
+
+## Roll back
+
+Use the backup directory printed by the deployment script. Restore only the files
+that need rollback, for example:
+
+```bash
+cp -p ~/public_html/backup-files/phaseone-deploy-TIMESTAMP/contact.html ~/public_html/contact.html
+```
+
+Replace `TIMESTAMP` with the actual deployment directory name.

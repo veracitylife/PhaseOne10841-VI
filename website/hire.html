@@ -41,6 +41,7 @@
         <a href="/demo.html">Demo</a>
         <a href="/sales.html">Sales</a>
         <a href="/hire.html" aria-current="page">Hire</a>
+        <a href="/contact.html">Contact</a>
         <a href="https://github.com/veracitylife/PhaseOne10841-VI" rel="noopener noreferrer" target="_blank">GitHub</a>
         <a class="btn btn-sm btn-primary" href="/hire.html#intake">Hire us</a>
       </nav>
@@ -52,18 +53,19 @@
       <div class="hero-grid" aria-hidden="true"></div>
       <div class="container page-hero-inner">
         <p class="eyebrow">For Hire Services · Veracity Integrity LLC</p>
-        <h1>Hire us for PhaseOne - or other cybersecurity work</h1>
+        <h1>Protect your agent environment with PhaseOne</h1>
         <p class="lead">
           PhaseOne10841 source is <strong>public</strong> on
           <a href="https://github.com/veracitylife/PhaseOne10841-VI" rel="noopener noreferrer" target="_blank">GitHub</a>.
-          Hire Veracity Integrity to implement PhaseOne in your environment, tune policy and operations,
-          or engage us for other <em>defensive</em> cybersecurity projects. No invented pricing -
-          we scope fit first.
+          PhaseOne is an agent EDR and security gateway designed to reduce agent breakout risk. We can
+          help deploy it, set boundaries around tools and data, tune detections and response playbooks,
+          or take on another <em>defensive</em> cybersecurity project. We’ll discuss scope and fit before
+          proposing an engagement.
         </p>
         <div class="hero-ctas">
           <a class="btn btn-primary" href="#intake">Start intake form</a>
           <a class="btn btn-ghost" href="/terms.html">Professional services terms</a>
-          <a class="btn btn-ghost" href="mailto:info@veracityintegrity.com?subject=Hire%20Veracity%20Integrity">Email info@</a>
+          <a class="btn btn-ghost" href="mailto:info@veracityintegrity.com?subject=PhaseOne%20implementation">Email Veracity Integrity</a>
         </div>
       </div>
     </section>
@@ -82,7 +84,7 @@
           </article>
           <article class="card">
             <h3>Policy &amp; detection tuning</h3>
-            <p>Rules, playbooks, approval workflows, and gatekeeper dry-run hardening matched to your agent fleet.</p>
+            <p>Reduce unsafe tool use and data egress with scoped permissions, approval gates, detection rules, and tested gatekeeper playbooks.</p>
           </article>
           <article class="card">
             <h3>Enterprise auth &amp; ops</h3>
@@ -90,7 +92,7 @@
           </article>
           <article class="card">
             <h3>Other cybersecurity projects</h3>
-            <p>Defensive architecture reviews, agent-security control planes, monitoring/SIEM integration, and related integrity work.</p>
+            <p>Defensive architecture reviews, agent-security monitoring, SIEM integration, response planning, and related integrity work.</p>
           </article>
         </div>
       </div>
@@ -108,7 +110,7 @@
             <a href="/terms.html">Professional Services Terms</a>.
           </p>
 
-          <form class="hire-form" id="hire-form" action="/hire-submit.php" method="post" novalidate>
+          <form class="hire-form" id="hire-form" action="/hire-submit.php" method="post">
             <div id="hire-status" class="hire-banner" hidden></div>
             <input type="hidden" name="form_id" value="phaseone-hire-intake" />
             <input type="text" name="website" class="hire-honeypot" tabindex="-1" autocomplete="off" aria-hidden="true" />
@@ -188,9 +190,36 @@
                   </select>
                 </label>
               </div>
+              <div class="hire-grid-2">
+                <label class="hire-field">
+                  <span>Approximate agent or workload count</span>
+                  <select name="agent_count">
+                    <option value="">Not sure yet</option>
+                    <option value="1-9">1–9</option>
+                    <option value="10-49">10–49</option>
+                    <option value="50-249">50–249</option>
+                    <option value="250+">250+</option>
+                  </select>
+                </label>
+                <label class="hire-field">
+                  <span>Hosting environment</span>
+                  <select name="hosting">
+                    <option value="">Not sure / to discuss</option>
+                    <option value="AWS">AWS</option>
+                    <option value="Azure">Azure</option>
+                    <option value="GCP">Google Cloud</option>
+                    <option value="Private / on-prem">Private cloud / on-premises</option>
+                    <option value="Mixed">Mixed environment</option>
+                  </select>
+                </label>
+              </div>
               <label class="hire-field">
                 <span>Frameworks / stack in use</span>
                 <input type="text" name="stack" maxlength="240" placeholder="e.g. LangChain, CrewAI, OpenAI SDK, Claude tools, Ollama" />
+              </label>
+              <label class="hire-field">
+                <span>Current concern or controls you need</span>
+                <textarea name="current_challenges" maxlength="2500" rows="4" placeholder="For example: tool permissions, prompt injection, MCP exposure, agent-to-agent trust, data egress, or incident response."></textarea>
               </label>
               <label class="hire-field">
                 <span>Project summary <abbr title="required">*</abbr></span>
@@ -222,10 +251,10 @@
 
             <div class="hire-actions">
               <button class="btn btn-primary" type="submit">Submit intake</button>
-              <a class="btn btn-ghost" href="mailto:info@veracityintegrity.com?subject=Hire%20Veracity%20Integrity">Or email us directly</a>
+              <a class="btn btn-ghost" href="mailto:info@veracityintegrity.com?subject=PhaseOne%20services%20inquiry">Or email us directly</a>
             </div>
             <p class="hire-footnote muted">
-              We typically reply from info@veracityintegrity.com. Support:
+              General inquiries: <a href="mailto:info@veracityintegrity.com">info@veracityintegrity.com</a>. Support:
               <a href="mailto:support@veracityintegrity.com">support@veracityintegrity.com</a>.
               Do not include secrets, API keys, or credentials in this form.
             </p>
@@ -236,7 +265,7 @@
           <h3>Contact</h3>
           <dl>
             <div>
-              <dt>Hire / sales</dt>
+              <dt>PhaseOne services</dt>
               <dd><a href="mailto:info@veracityintegrity.com">info@veracityintegrity.com</a></dd>
             </div>
             <div>
@@ -245,11 +274,7 @@
             </div>
             <div>
               <dt>Phone</dt>
-              <dd><a href="tel:+1888646790">+1-888-64-6790</a></dd>
-            </div>
-            <div>
-              <dt>WhatsApp</dt>
-              <dd><a href="https://wa.me/18083656628" rel="noopener noreferrer" target="_blank">+1 (808) 365-6628</a></dd>
+              <dd><a href="tel:+18013965408">+1 (801) 396-5408</a></dd>
             </div>
             <div>
               <dt>Address</dt>
@@ -287,14 +312,14 @@
         <p class="muted">Defensive Agent Security Gateway</p>
         <p class="muted">A product of <a href="https://VeracityIntegrity.com">Veracity Integrity LLC</a></p>
         <p class="muted"><a href="https://github.com/veracitylife/PhaseOne10841-VI" rel="noopener noreferrer" target="_blank">GitHub</a></p>
-        <p class="muted"><a href="/demo.html">Demo</a> · <a href="/sales.html">Sales</a> · <a href="/hire.html">Hire</a></p>
+        <p class="muted"><a href="/demo.html">Demo</a> · <a href="/sales.html">Sales</a> · <a href="/hire.html">Hire</a> · <a href="/contact.html">Contact</a></p>
       </div>
       <div>
         <p class="footer-heading">Contact</p>
         <p><a href="mailto:info@veracityintegrity.com">info@veracityintegrity.com</a></p>
         <p><a href="mailto:support@veracityintegrity.com">support@veracityintegrity.com</a></p>
-        <p><a href="tel:+1888646790">+1-888-64-6790</a></p>
-        <p>WhatsApp <a href="https://wa.me/18083656628" rel="noopener noreferrer" target="_blank">+1 (808) 365-6628</a></p>
+        <p><a href="tel:+18013965408">+1 (801) 396-5408</a></p>
+
       </div>
       <div>
         <p class="footer-heading">Legal</p>
@@ -327,7 +352,7 @@
         el.textContent = 'Please complete required fields (including defensive-only and terms checkboxes) and try again.';
       } else {
         el.classList.add('error');
-        el.textContent = 'We could not send the message automatically. Please email info@veracityintegrity.com directly.';
+        el.textContent = 'We could not send the message automatically. Please email info@veracityintegrity.com or use the general contact form.';
       }
     })();
   </script>
