@@ -27,7 +27,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gateway
-          image: phaseone:0.8.0
+          image: phaseone:0.1.1
           imagePullPolicy: IfNotPresent
           command:
             - tsx

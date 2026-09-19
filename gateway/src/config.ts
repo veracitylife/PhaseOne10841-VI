@@ -31,7 +31,7 @@ export function loadConfig(): GatewayConfig {
     siemWebhookUrl: process.env.PHASEONE_SIEM_WEBHOOK_URL ?? process.env.SIEM_WEBHOOK_URL,
     alertWebhookUrl: process.env.PHASEONE_ALERT_WEBHOOK_URL ?? process.env.ALERT_WEBHOOK_URL,
     rulesDir: process.env.PHASEONE_RULES_DIR,
-    productVersion: '0.8.0',
+    productVersion: '0.1.1',
   };
 }
 

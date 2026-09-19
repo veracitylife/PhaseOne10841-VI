@@ -1,7 +1,7 @@
 # PhaseOne10841 OIDC/SSO Setup Guide
 
 **Veracity Integrity LLC** · https://VeracityIntegrity.com  
-PhaseOne10841 v0.8.0
+PhaseOne10841 v0.1.1
 
 ---
 

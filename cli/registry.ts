@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const ROOT = resolve(__dirname, '..');
 
-export const VERSION = '0.8.0';
+export const VERSION = '0.1.1';
 export const PRODUCT_NAME = 'PhaseOne10841';
 export const COMPANY = 'Veracity Integrity LLC';
 export const WEBSITE = 'https://VeracityIntegrity.com';

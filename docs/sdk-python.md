@@ -3,7 +3,7 @@
 **phaseone-client** — Python client for the Defensive Agent Security Gateway.
 
 **Veracity Integrity LLC** · https://VeracityIntegrity.com  
-PhaseOne10841 v0.8.0
+PhaseOne10841 v0.1.1
 
 ---
 

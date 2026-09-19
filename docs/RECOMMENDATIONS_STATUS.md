@@ -1,7 +1,7 @@
 # Phase 8 Approved Recommendations — Status Tracker
 
 **Approved by Ryan:** 2026-09-17  
-**Current version:** v0.8.0 (Phase 8 Waves A–C shipped)  
+**Current version:** v0.1.1 (current application version)
 **Phase 8 status:** Complete
 
 ---

@@ -134,9 +134,9 @@ describe('Wave B #7 signed canaries', () => {
       timestamp: new Date().toISOString(),
       metadata: { canary_signature: 'sig-abc' },
     };
-    const doc = toEcsLike(event, { version: '0.8.0' });
+    const doc = toEcsLike(event, { version: '0.1.1' });
     expect(doc.phaseone.canary_signature).toBe('sig-abc');
-    expect(doc.labels.version).toBe('0.8.0');
+    expect(doc.labels.version).toBe('0.1.1');
   });
 });
 
