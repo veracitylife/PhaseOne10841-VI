@@ -128,7 +128,7 @@ describe('onboard Phase 5 env', () => {
     expect(env).toContain('PHASEONE_API_RATE_LIMIT=');
     expect(env).toContain('PHASEONE_OTP_RATE_LIMIT=');
     expect(env).toContain('PHASEONE_BACKUP_DIR=');
-    expect(env).toMatch(/v0\.[78]/);
+    expect(env).toMatch(/v0\.1\.1/);
   });
 });
 
