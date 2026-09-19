@@ -50,7 +50,7 @@ if ($name === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || !in_array($top
     contact_redirect('invalid');
 }
 
-$to = 'info@veracityintegrity.com';
+$to = 'veracityintegrity_claw@veracityintegrity.com';
 $subject = '[PhaseOne contact] ' . $topic;
 $body = implode("\n", [
     'General inquiry submitted from phaseone10841.me/contact.html',
@@ -72,7 +72,7 @@ $body = implode("\n", [
 $headers = [
     'MIME-Version: 1.0',
     'Content-Type: text/plain; charset=UTF-8',
-    'From: PhaseOne10841 Contact <info@veracityintegrity.com>',
+    'From: PhaseOne10841 Contact <veracityintegrity_claw@veracityintegrity.com>',
     'Reply-To: ' . $email,
     'X-Content-Type-Options: nosniff',
 ];

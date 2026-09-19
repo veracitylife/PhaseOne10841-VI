@@ -18,7 +18,7 @@ then promotes the new files individually. It checks the homepage, contact, hire,
 and terms pages over HTTPS. It leaves `.htaccess`, PHP configuration, mail routing,
 and unrelated account files untouched.
 
-The forms currently route inquiries to the published `info@veracityintegrity.com` inbox. The requested dedicated `PhaseOneEDR@veracityintegrity.com` forwarding address was not created because cPanel UAPI/permissions are failing; set it up through a repaired cPanel service before changing form routing.
+The general contact and For Hire forms deliver to the existing cPanel mailbox `veracityintegrity_claw@veracityintegrity.com`.
 
 ## Roll back
 

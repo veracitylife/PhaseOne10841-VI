@@ -84,7 +84,7 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
   redirect_with('invalid');
 }
 
-$to = 'info@veracityintegrity.com';
+$to = 'veracityintegrity_claw@veracityintegrity.com';
 $subject = 'Hire intake: ' . $interest . ' — ' . $name;
 $subject = preg_replace('/[\r\n]+/', ' ', $subject) ?? $subject;
 
@@ -119,7 +119,7 @@ $body .= "Public repo: https://github.com/veracitylife/PhaseOne10841-VI\n";
 $headers = [];
 $headers[] = 'MIME-Version: 1.0';
 $headers[] = 'Content-Type: text/plain; charset=UTF-8';
-$headers[] = 'From: PhaseOne10841 Hire Intake <info@veracityintegrity.com>';
+$headers[] = 'From: PhaseOne10841 Hire Intake <veracityintegrity_claw@veracityintegrity.com>';
 $headers[] = 'Reply-To: ' . $email;
 $headers[] = 'X-Mailer: PhaseOne10841-HireForm';
 
