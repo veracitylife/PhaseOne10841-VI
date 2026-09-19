@@ -294,7 +294,7 @@ describe('onboard Phase 4 env', () => {
     expect(env).toContain('PHASEONE_ALERT_WEBHOOK_URL=https://hooks.example/a');
     expect(env).toContain('PHASEONE_RULES_DIR=./rules');
     expect(env).toContain('PHASEONE_VIEWER_EMAILS=v@localhost');
-    expect(env).toMatch(/v0\.[4567]/);
+    expect(env).toMatch(/v0\.[45678]/);
   });
 });
 

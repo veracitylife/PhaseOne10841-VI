@@ -170,6 +170,7 @@
         <button data-view="audit">Audit log</button>
         <button data-view="lab">Lab monitor</button>
         <button data-view="ops">Ops / Phase 5</button>
+        <button data-view="learn">Learn</button>
         <button data-view="phase6">Phase 6</button>
         <button data-view="settings">Settings</button>
       </nav>
@@ -343,6 +344,22 @@
             <h2>Gatekeeper Rate Caps</h2>
             <p class="sub">Rate limiting for contain/harden actions. Prevents thrashing and provides circuit-breaker protection.</p>
             <pre id="rate-cap-out"></pre>
+          </div>
+        </section>
+
+        <section id="view-learn" class="view hidden">
+          <div class="panel">
+            <h2>Learn — playbook effectiveness</h2>
+            <p class="sub">Track confirm/deny outcomes and review human-gated suggestion heuristics. Suggestions are never auto-applied.</p>
+            <div class="row field">
+              <input id="learn-days" type="number" value="7" style="max-width:100px" title="Window days" />
+              <button onclick="loadLearn()">Refresh</button>
+              <a class="ghost" href="/api/gatekeeper/effectiveness/export?days=30" style="margin-left:.5rem">Export JSON</a>
+            </div>
+            <div id="learn-metrics"></div>
+            <h2 style="font-size:1rem;margin-top:1rem">Suggestions (require human approval)</h2>
+            <div id="learn-suggestions"></div>
+            <pre id="learn-out" style="max-height:320px;overflow:auto;margin-top:.5rem"></pre>
           </div>
         </section>
 
@@ -767,6 +784,9 @@ npm run phaseone -- gui</pre>
       const rc = await api('/api/gatekeeper/rate-caps');
       document.getElementById('rate-cap-out').textContent = JSON.stringify(rc.data, null, 2);
     }
+    if (currentView === 'learn') {
+      await loadLearn();
+    }
     if (currentView === 'rules') {
       const { data } = await api('/api/rules');
       const rules = data.data || [];
@@ -924,6 +944,29 @@ npm run phaseone -- gui</pre>
       <div class="sub">Top tools: ${(br.affected_tools || []).slice(0, 5).join(', ')}</div>
     `;
     document.getElementById('sim-out').textContent = JSON.stringify(data, null, 2);
+  }
+
+  async function loadLearn() {
+    const days = document.getElementById('learn-days')?.value || 7;
+    const { res, data } = await api('/api/gatekeeper/effectiveness?days=' + days);
+    if (!res.ok) {
+      document.getElementById('learn-metrics').innerHTML = '<div class="empty">Failed to load effectiveness</div>';
+      return;
+    }
+    const metrics = data.metrics || [];
+    document.getElementById('learn-metrics').innerHTML = metrics.length
+      ? `<div class="cards" style="margin:.75rem 0">${metrics.map(m => `
+          <div class="card"><div class="label">${escapeHtml(m.playbook_id)}</div>
+          <div class="value">${m.total}</div>
+          <div class="meta">deny ${(m.deny_rate * 100).toFixed(0)}% · confirm ${(m.confirm_rate * 100).toFixed(0)}%</div></div>`).join('')}</div>`
+      : '<div class="empty">No playbook outcomes in this window yet.</div>';
+    const suggestions = data.suggestions || [];
+    document.getElementById('learn-suggestions').innerHTML = suggestions.length
+      ? suggestions.map(s => `<div class="item"><strong>${escapeHtml(s.kind)}</strong> · ${escapeHtml(s.playbook_id)}
+          <div class="meta">${escapeHtml(s.message)}</div>
+          <div class="meta">requires_human_approval: true</div></div>`).join('')
+      : '<div class="empty">No suggestions — keep reviewing confirm/deny actions.</div>';
+    document.getElementById('learn-out').textContent = JSON.stringify(data, null, 2);
   }
 
   checkAuth().then((ok) => { if (ok) refreshAll(); });

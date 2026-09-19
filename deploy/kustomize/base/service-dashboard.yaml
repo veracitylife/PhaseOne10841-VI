@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: phaseone-dashboard
+  labels:
+    app.kubernetes.io/name: phaseone
+    app.kubernetes.io/component: dashboard
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3000
+      targetPort: http
+      name: http
+  selector:
+    app.kubernetes.io/name: phaseone
+    app.kubernetes.io/component: dashboard

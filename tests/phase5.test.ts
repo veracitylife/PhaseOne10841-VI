@@ -133,13 +133,13 @@ describe('onboard Phase 5 env', () => {
 });
 
 describe('version & docs artifacts', () => {
-  it('config productVersion is 0.8.0-pre', () => {
-    expect(loadConfig().productVersion).toBe('0.8.0-pre');
+  it('config productVersion is 0.8.0', () => {
+    expect(loadConfig().productVersion).toBe('0.8.0');
   });
 
-  it('package.json is 0.8.0-pre', () => {
+  it('package.json is 0.8.0', () => {
     const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'));
-    expect(pkg.version).toBe('0.8.0-pre');
+    expect(pkg.version).toBe('0.8.0');
     expect(pkg.scripts.smoke).toBeTruthy();
     expect(pkg.scripts.retention).toBeTruthy();
     expect(pkg.scripts.backup).toBeTruthy();

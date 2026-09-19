@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "phaseone.gatewayServiceName" . }}
+  labels:
+    {{- include "phaseone.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+  {{- with .Values.service.gateway.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.gateway.type }}
+  ports:
+    - port: {{ .Values.service.gateway.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "phaseone.gatewaySelectorLabels" . | nindent 4 }}

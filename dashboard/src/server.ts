@@ -432,6 +432,11 @@ proxyGet('/api/gatekeeper/pending', '/v1/phaseone/gatekeeper/pending');
 proxyGet('/api/gatekeeper/recent', '/v1/phaseone/gatekeeper/recent');
 proxyGet('/api/gatekeeper/overrides', '/v1/phaseone/gatekeeper/overrides');
 proxyGet('/api/gatekeeper/notifications', '/v1/phaseone/gatekeeper/notifications');
+proxyGet('/api/gatekeeper/effectiveness', '/v1/phaseone/gatekeeper/effectiveness');
+proxyGet('/api/gatekeeper/effectiveness/export', '/v1/phaseone/gatekeeper/effectiveness/export');
+proxyGet('/api/mcp/proxy/allowlist', '/v1/mcp/proxy/allowlist');
+proxyGet('/api/orgs', '/v1/orgs');
+proxyGet('/api/canaries/verify', '/v1/phaseone/canaries/verify');
 
 app.get('/api/security/cookies', (c) => {
   const auth = gate(c);

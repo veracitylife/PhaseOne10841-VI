@@ -1,7 +1,7 @@
 # Phase 8 Implementation Plan
 
 **Veracity Integrity LLC** · https://VeracityIntegrity.com  
-Product: PhaseOne10841ME · **v0.7.0** (shipped) → **Phase 8 planned**  
+Product: PhaseOne10841ME · **v0.8.0** (Phase 8 complete)  
 **Approved by Ryan:** 2026-09-17
 
 ---
@@ -311,7 +311,7 @@ Phase 8 is complete when:
 ## Version notes
 
 - **v0.7.0:** Phase 7 shipped (gatekeeper, playbooks, runtime overrides)
-- **v0.8.0:** Phase 8 target (all nine recommendations)
+- **v0.8.0:** Phase 8 complete (Waves A–C — all nine recommendations)
 
 ---
 

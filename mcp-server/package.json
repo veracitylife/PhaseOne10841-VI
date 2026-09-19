@@ -1,0 +1,21 @@
+{
+  "name": "@phaseone/operator-mcp",
+  "version": "0.8.0",
+  "description": "PhaseOne10841 Operator MCP — read-mostly management tools for trusted operator agents (DEFENSIVE ONLY)",
+  "type": "module",
+  "author": "Veracity Integrity LLC <https://VeracityIntegrity.com>",
+  "license": "MIT",
+  "bin": {
+    "phaseone-operator-mcp": "./src/index.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "phaseone10841",
+    "mcp",
+    "operator",
+    "defensive",
+    "agent-security"
+  ]
+}

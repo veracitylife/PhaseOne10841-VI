@@ -1,6 +1,6 @@
 # PhaseOne10841 — Defensive Agent Security Gateway (Agent EDR)
 
-**phaseone-core v0.8.0-pre** (Phase 8 Wave A)
+**phaseone-core v0.8.0** (Phase 8 Waves A–C)
 
 Watches autonomous agents the way CrowdStrike watches endpoints — **outside** the agent, not via prompt-only hope.
 
@@ -9,7 +9,7 @@ Watches autonomous agents the way CrowdStrike watches endpoints — **outside** 
 **A product of [Veracity Integrity LLC](https://VeracityIntegrity.com)** · https://VeracityIntegrity.com  
 Website concept: [PhaseOne10841.me](https://phaseone10841.me)
 
-> **Repository access:** The PhaseOne10841 product repository is **private** (commercial / licensed distribution). Contact Veracity Integrity LLC via https://VeracityIntegrity.com for access, evaluation, or deployment support. This README documents the software as shipped to authorized operators.
+> **Public source:** This repository is **public** at [github.com/veracitylife/PhaseOne10841-VI](https://github.com/veracitylife/PhaseOne10841-VI). Commercial support, deployment help, and implementation services are available from Veracity Integrity LLC via https://VeracityIntegrity.com.
 
 ---
 
@@ -457,36 +457,24 @@ PhaseOne10841ME/
 ## Roadmap (indicative)
 
 - Richer rule language (aggregations, time windows)  
-- Optional signed canary packages for production deployments  
-- Multi-tenant org controls beyond email allowlists  
 - Additional IdP integrations (SAML, etc.)  
+- Expanded operator automation surfaces (always human-gated for mutations)  
 
-### Current: v0.7.0 → v0.8.0-pre (Phase 7 + Phase 8 Wave A)
+Commercial support and implementation: https://VeracityIntegrity.com
 
-Gatekeeper worker, YAML playbooks, runtime overrides, human confirmation for harden-tier actions, LLM advisor.
+### Current: v0.8.0 (Phase 8 Waves A–C complete)
 
-### Phase 8 — Approved backlog (Ryan 2026-09-17)
+Gatekeeper worker, YAML playbooks, runtime overrides, OIDC/SSO, simulation, SDKs, learn loop, MCP proxy, signed canaries, operator MCP, Helm/K8s, multi-tenant orgs.
 
-Nine approved recommendations organized into implementation waves:
+### Phase 8 — Shipped (Ryan approved 2026-09-17)
 
-**Wave A — Sales/demo leverage:**
-1. **Finish real IdP for OIDC/SSO** — Concrete IdP: callback, session, logout; enterprise auth demoable end-to-end
-2. **Gatekeeper blast-radius & simulation** — Pre-flight "what would this playbook do?"; rate caps/cooldowns
-3. **Packaged SDKs (npm + PyPI)** — Official clients for OpenAI/LangChain/CrewAI with headers, enforce helpers
+Nine recommendations across three waves — see [docs/RECOMMENDATIONS_STATUS.md](docs/RECOMMENDATIONS_STATUS.md) and [docs/PHASE8_PLAN.md](docs/PHASE8_PLAN.md).
 
-**Wave B — Defense depth:**
-4. **Playbook effectiveness / learn loop** — Track false positives, hit rates, suggested YAML tweaks (human-gated)
-5. **Full MCP wire proxy (selective)** — Thin wire proxy for trusted MCP servers with policy/approval/audit
-6. **Signed canary packages** — Signed rotatable production canaries with integrity checks and SIEM provenance
+**Wave A:** OIDC/SSO · Gatekeeper blast-radius & simulation · Packaged SDKs  
+**Wave B:** Playbook learn loop · Selective MCP wire proxy · Signed canary packages  
+**Wave C:** Operator MCP · Kubernetes Helm path · Multi-tenant org controls
 
-**Wave C — Platform scale:**
-7. **Operator MCP (read-mostly)** — Management MCP for health, gatekeeper status, pending confirmations, metrics
-8. **Kubernetes Helm + operator path** — Helm/Kustomize: Postgres, gateway, dashboard, ingress, secrets, CronJobs
-9. **Multi-tenant org controls** — Orgs, agent fleets, per-tenant policy/playbooks, scoped audit
-
-See [docs/PHASE8_PLAN.md](docs/PHASE8_PLAN.md) for detailed implementation plan and sequencing.
-
-Roadmap items are approved for implementation; contact Veracity Integrity LLC for commercial discussions.
+Commercial support and implementation services: https://VeracityIntegrity.com
 
 ---
 
@@ -580,7 +568,7 @@ MIT — Copyright (c) 2026 **Veracity Integrity LLC** — see `LICENSE`.
 
 Product concept site: https://phaseone10841.me  
 
-Private product repository — distribution to authorized customers and partners only.
+Public source repository — commercial support and implementation available via Veracity Integrity LLC.
 
 ## Operator checklist
 

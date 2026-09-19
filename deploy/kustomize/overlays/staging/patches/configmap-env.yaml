@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: phaseone-config
+data:
+  UPSTREAM_PROVIDER: mock
+  PHASEONE_SECURE_COOKIES: "true"

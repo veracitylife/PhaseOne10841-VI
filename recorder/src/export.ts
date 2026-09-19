@@ -38,6 +38,7 @@ export interface EcsLikeEvent {
     result?: unknown;
     metadata?: Record<string, unknown>;
     parent_event_id?: string | null;
+    canary_signature?: string | null;
   };
   url?: { full?: string; domain?: string };
   message: string;
@@ -71,11 +72,18 @@ function hostFromDest(dest?: string | null): string | undefined {
 
 /** Map a PhaseOne event to an ECS-ish document (secrets redacted). */
 export function toEcsLike(event: AgentEvent, opts?: { version?: string }): EcsLikeEvent {
-  const version = opts?.version ?? '0.4.0';
+  const version = opts?.version ?? '0.8.0';
   const ts = event.timestamp ?? new Date().toISOString();
   const args = event.tool_args != null ? redactSecretsDeep(event.tool_args) : undefined;
   const result = event.result != null ? redactSecretsDeep(event.result) : undefined;
   const meta = event.metadata ? redactSecretsDeep(event.metadata) : undefined;
+  const canarySignature =
+    (meta && typeof meta === 'object' && 'canary_signature' in meta
+      ? String((meta as { canary_signature?: unknown }).canary_signature ?? '')
+      : '') ||
+    (typeof event.metadata?.canary_signature === 'string'
+      ? event.metadata.canary_signature
+      : null);
 
   return {
     '@timestamp': ts,
@@ -112,6 +120,7 @@ export function toEcsLike(event: AgentEvent, opts?: { version?: string }): EcsLi
       result,
       metadata: meta,
       parent_event_id: event.parent_event_id ?? null,
+      canary_signature: canarySignature || null,
     },
     url: event.destination
       ? { full: event.destination, domain: hostFromDest(event.destination) }

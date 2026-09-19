@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: phaseone-gateway
+  labels:
+    app.kubernetes.io/name: phaseone
+    app.kubernetes.io/component: gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: phaseone
+      app.kubernetes.io/component: gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: phaseone
+        app.kubernetes.io/component: gateway
+    spec:
+      serviceAccountName: phaseone
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          image: phaseone:0.8.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - tsx
+            - gateway/src/index.ts
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: phaseone-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: phaseone-secrets
+                  key: DATABASE_URL
+            - name: PHASEONE_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: phaseone-secrets
+                  key: PHASEONE_SESSION_SECRET
+                  optional: true
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: phaseone-secrets
+                  key: OPENAI_API_KEY
+                  optional: true
+            - name: OPENROUTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: phaseone-secrets
+                  key: OPENROUTER_API_KEY
+                  optional: true
+            - name: PHASEONE_SIEM_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: phaseone-secrets
+                  key: PHASEONE_SIEM_WEBHOOK_URL
+                  optional: true
+            - name: PHASEONE_ALERT_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: phaseone-secrets
+                  key: PHASEONE_ALERT_WEBHOOK_URL
+                  optional: true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL

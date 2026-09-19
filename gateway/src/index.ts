@@ -33,6 +33,8 @@ import { registerPhase4Routes } from './routes/phase4.js';
 import { registerPhase5Routes } from './routes/phase5.js';
 import { registerPhase7Routes } from './routes/phase7.js';
 import { registerGatekeeperRoutes } from './routes/gatekeeper.js';
+import { registerMcpProxyRoutes } from './routes/mcp-proxy.js';
+import { registerOrgRoutes } from './routes/orgs.js';
 import { registerGatewayMiddleware } from './middleware/index.js';
 import { getRichSessionTimeline } from '../../recorder/src/recorder.js';
 
@@ -509,6 +511,8 @@ registerPhase4Routes(app, cfg);
 registerPhase5Routes(app, cfg);
 registerPhase7Routes(app, cfg);
 registerGatekeeperRoutes(app, cfg);
+registerMcpProxyRoutes(app, cfg);
+registerOrgRoutes(app, cfg);
 
 const port = cfg.port;
 console.log(`PhaseOne10841 Agent Security Gateway v0.8.0-pre — Veracity Integrity LLC`);

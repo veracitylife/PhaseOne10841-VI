@@ -1,0 +1,33 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: phaseone
+  annotations:
+    kubernetes.io/ingress.class: nginx
+spec:
+  tls:
+    - secretName: phaseone-tls-placeholder
+      hosts:
+        - staging.phaseone.example.com
+        - dashboard-staging.phaseone.example.com
+  rules:
+    - host: staging.phaseone.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: phaseone-gateway
+                port:
+                  number: 8080
+    - host: dashboard-staging.phaseone.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: phaseone-dashboard
+                port:
+                  number: 3000

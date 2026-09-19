@@ -1,8 +1,8 @@
 # PhaseOne10841 — Phase 8 Approved Recommendations (1–9)
 
 **Veracity Integrity LLC** · https://VeracityIntegrity.com  
-Product: PhaseOne10841ME · **v0.7.0** (shipped) → **Phase 8 planned**  
-All nine items below are **Approved** by Ryan (2026-09-17). Implementation planned.
+Product: PhaseOne10841ME · **v0.8.0** (Phase 8 complete)  
+All nine items below are **Approved** by Ryan (2026-09-17). Implementation **complete**.
 
 ---
 
@@ -16,7 +16,7 @@ All nine items below are **Approved** by Ryan (2026-09-17). Implementation plann
 | | |
 |--|--|
 | **Approved** | Yes |
-| **Status** | **Planned** |
+| **Status** | **Done** |
 
 **Goal:** Concrete IdP implementation with callback, session management, and logout — enterprise auth demoable end-to-end beside email OTP.
 
@@ -48,7 +48,7 @@ All nine items below are **Approved** by Ryan (2026-09-17). Implementation plann
 | | |
 |--|--|
 | **Approved** | Yes |
-| **Status** | **Planned** |
+| **Status** | **Done** |
 
 **Goal:** Track false positives, hit rates, and suggested YAML tweaks from confirm/deny actions — still human-gated.
 
@@ -79,7 +79,7 @@ All nine items below are **Approved** by Ryan (2026-09-17). Implementation plann
 | | |
 |--|--|
 | **Approved** | Yes |
-| **Status** | **Planned** |
+| **Status** | **Done** |
 
 **Goal:** Thin wire proxy for trusted MCP servers with same policy/approval/audit as tools.
 
@@ -111,7 +111,7 @@ All nine items below are **Approved** by Ryan (2026-09-17). Implementation plann
 | | |
 |--|--|
 | **Approved** | Yes |
-| **Status** | **Planned** |
+| **Status** | **Done** |
 
 **Goal:** Management MCP for trusted operator agents: health, gatekeeper status, pending confirmations, metrics; mutations only with MFA/RBAC + human confirm.
 
@@ -143,7 +143,7 @@ All nine items below are **Approved** by Ryan (2026-09-17). Implementation plann
 | | |
 |--|--|
 | **Approved** | Yes |
-| **Status** | **Planned** |
+| **Status** | **Done** |
 
 **Goal:** Helm/Kustomize deployment: Postgres, gateway, dashboard, ingress, secrets, retention CronJobs.
 
@@ -177,7 +177,7 @@ All nine items below are **Approved** by Ryan (2026-09-17). Implementation plann
 | | |
 |--|--|
 | **Approved** | Yes |
-| **Status** | **Planned** |
+| **Status** | **Done** |
 
 **Goal:** Orgs, agent fleets, per-tenant policy/playbooks, scoped audit beyond email allowlists.
 
@@ -210,7 +210,7 @@ All nine items below are **Approved** by Ryan (2026-09-17). Implementation plann
 | | |
 |--|--|
 | **Approved** | Yes |
-| **Status** | **Planned** |
+| **Status** | **Done** |
 
 **Goal:** Signed rotatable production canaries with integrity checks and SIEM provenance.
 
@@ -242,7 +242,7 @@ All nine items below are **Approved** by Ryan (2026-09-17). Implementation plann
 | | |
 |--|--|
 | **Approved** | Yes |
-| **Status** | **Planned** |
+| **Status** | **Done** |
 
 **Goal:** Official clients for OpenAI/LangChain/CrewAI with headers, enforce helpers, versioned docs.
 
@@ -275,7 +275,7 @@ All nine items below are **Approved** by Ryan (2026-09-17). Implementation plann
 | | |
 |--|--|
 | **Approved** | Yes |
-| **Status** | **Planned** |
+| **Status** | **Done** |
 
 **Goal:** Pre-flight "what would this playbook do?" over a time window; rate caps/cooldowns so contain/harden cannot thrash a fleet.
 

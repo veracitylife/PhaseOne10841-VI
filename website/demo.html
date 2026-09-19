@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Product Demo — PhaseOne10841 | Veracity Integrity</title>
+  <title>Product Demo - PhaseOne10841 | Veracity Integrity</title>
   <meta name="description" content="Walk through how PhaseOne10841 works: gateway proxy, policy YAML, MFA dashboard, session replay, canaries, A2A firewall, human approval, SIEM export, and lab harness. Defensive only." />
   <meta name="robots" content="index,follow" />
   <link rel="canonical" href="https://phaseone10841.me/demo.html" />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://phaseone10841.me/demo.html" />
   <meta property="og:title" content="PhaseOne10841 Product Demo" />
-  <meta property="og:description" content="Defensive Agent Security Gateway walkthrough — gateway, policy, replay, canaries, MFA dashboard." />
+  <meta property="og:description" content="Defensive Agent Security Gateway walkthrough - gateway, policy, replay, canaries, MFA dashboard." />
   <meta property="og:site_name" content="PhaseOne10841" />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="stylesheet" href="/styles.css" />
@@ -40,8 +40,9 @@
         <a href="/#capabilities">Capabilities</a>
         <a href="/demo.html" aria-current="page">Demo</a>
         <a href="/sales.html">Sales</a>
+        <a href="/hire.html">Hire</a>
         <a href="https://github.com/veracitylife/PhaseOne10841-VI" rel="noopener noreferrer" target="_blank">GitHub</a>
-        <a class="btn btn-sm btn-primary" href="mailto:info@veracityintegrity.com?subject=PhaseOne10841%20Early%20Access">Request early access</a>
+        <a class="btn btn-sm btn-primary" href="/hire.html#intake">Hire us</a>
       </nav>
     </div>
   </header>
@@ -53,13 +54,13 @@
         <p class="eyebrow">Product demonstration · Defensive only</p>
         <h1>How PhaseOne10841 works</h1>
         <p class="lead">
-          A step-by-step walkthrough of the Defensive Agent Security Gateway—
+          A step-by-step walkthrough of the Defensive Agent Security Gateway-
           from proxying agent traffic to policy, replay, canaries, approvals, and SIEM.
           Illustrative UI panels only; no exploit steps or attack payloads.
         </p>
         <div class="hero-ctas">
-          <a class="btn btn-primary" href="mailto:info@veracityintegrity.com?subject=PhaseOne10841%20Early%20Access">Request early access</a>
-          <a class="btn btn-ghost" href="/sales.html">Sales &amp; early access</a>
+          <a class="btn btn-primary" href="/hire.html#intake">Hire Veracity Integrity</a>
+          <a class="btn btn-ghost" href="/sales.html">Sales</a>
           <a class="btn btn-ghost" href="https://github.com/veracitylife/PhaseOne10841-VI" rel="noopener noreferrer" target="_blank">View on GitHub</a>
         </div>
       </div>
@@ -165,7 +166,7 @@ approval:
               <h3>MFA dashboard</h3>
               <p>
                 Admins sign in with email OTP. The console surfaces incidents, session replay,
-                pending approvals, policy, agents, canaries, SIEM export, and lab status—
+                pending approvals, policy, agents, canaries, SIEM export, and lab status-
                 with lightweight RBAC (admin vs viewer).
               </p>
               <ul>
@@ -217,7 +218,7 @@ approval:
               <p>
                 Every gated interaction is recorded to Postgres. Deep session replay lets
                 operators reconstruct the chain of prompts, tool decisions, policy hits,
-                and approvals—useful for incident review and compliance.
+                and approvals-useful for incident review and compliance.
               </p>
               <ul>
                 <li>Event store with session continuity</li>
@@ -250,7 +251,7 @@ approval:
               <h3>Canaries</h3>
               <p>
                 Harmless marker files act as tripwires. If an agent or process touches them
-                unexpectedly, PhaseOne10841 raises a high-severity signal—without storing
+                unexpectedly, PhaseOne10841 raises a high-severity signal-without storing
                 real secrets in the markers.
               </p>
               <ul>
@@ -330,7 +331,7 @@ approval:
               <h3>Human approval</h3>
               <p>
                 When policy marks a tool as destructive, the gateway holds the action until
-                a human resolves it—with risk, reason, expiry, and notes. Timeouts expire
+                a human resolves it-with risk, reason, expiry, and notes. Timeouts expire
                 pending requests safely rather than auto-approving.
               </p>
               <ul>
@@ -371,7 +372,7 @@ approval:
               <p>
                 Feed your existing SOC stack. PhaseOne10841 emits ECS-style JSONL for
                 download and optional webhook sinks for canary, injection-blocked, and
-                approval-timeout events—plus Prometheus metrics on the gateway.
+                approval-timeout events-plus Prometheus metrics on the gateway.
               </p>
               <ul>
                 <li>JSONL download from the dashboard</li>
@@ -403,7 +404,7 @@ approval:
               <h3>Lab harness</h3>
               <p>
                 Validate detectors with inert fake services and labeled TEST fixtures.
-                The lab is for defensive detector validation only—no live exploit targets,
+                The lab is for defensive detector validation only-no live exploit targets,
                 payloads, or unauthorized-access tooling.
               </p>
               <ul>
@@ -444,13 +445,13 @@ approval:
               <p>
                 YAML playbooks automate defense responses in a <strong>Sense → Decide → Act → Learn</strong> loop.
                 Tiered actions (observe, contain, harden) let operators respond proportionally.
-                High-impact changes require human confirmation—enforcement stays deterministic.
+                High-impact changes require human confirmation-enforcement stays deterministic.
               </p>
               <ul>
-                <li><strong>Dry-run mode</strong> — observe without mutations until ready</li>
-                <li><strong>Runtime overrides</strong> — temporary policy (deny tool, tighten rate limit) with auto-expiration</li>
-                <li><strong>LLM advisor</strong> — optional suggestions via OpenRouter / Ollama; LLM advises, playbooks decide</li>
-                <li><strong>Human confirmation</strong> — harden-tier actions wait for admin approval</li>
+                <li><strong>Dry-run mode</strong> - observe without mutations until ready</li>
+                <li><strong>Runtime overrides</strong> - temporary policy (deny tool, tighten rate limit) with auto-expiration</li>
+                <li><strong>LLM advisor</strong> - optional suggestions via OpenRouter / Ollama; LLM advises, playbooks decide</li>
+                <li><strong>Human confirmation</strong> - harden-tier actions wait for admin approval</li>
               </ul>
             </div>
             <div class="step-visual">
@@ -495,17 +496,17 @@ actions:
                 <code>phaseone help &lt;cmd&gt;</code> for detailed examples and tips.
               </p>
               <ul>
-                <li><strong>Category menus</strong> — Getting Started, Health &amp; Ops, Defense, Gatekeeper, Dangerous</li>
-                <li><strong>Recommended first run</strong> — onboard → compose up → health → smoke → gui</li>
-                <li><strong>Gatekeeper commands</strong> — status, dry-run, llm-check, confirm/deny</li>
-                <li><strong>Local GUI</strong> — browser-based interface with guidance panel and examples</li>
+                <li><strong>Category menus</strong> - Getting Started, Health &amp; Ops, Defense, Gatekeeper, Dangerous</li>
+                <li><strong>Recommended first run</strong> - onboard → compose up → health → smoke → gui</li>
+                <li><strong>Gatekeeper commands</strong> - status, dry-run, llm-check, confirm/deny</li>
+                <li><strong>Local GUI</strong> - browser-based interface with guidance panel and examples</li>
               </ul>
             </div>
             <div class="step-visual">
               <div class="mock-ui" aria-hidden="true">
                 <div class="mock-chrome">
                   <span class="mock-dot r"></span><span class="mock-dot y"></span><span class="mock-dot g"></span>
-                  <span class="mock-title">phaseone · CLI v0.7.0</span>
+                  <span class="mock-title">phaseone · CLI v0.8.0</span>
                 </div>
                 <div class="mock-body">
                   <pre class="mock-code">📋 RECOMMENDED FIRST RUN:
@@ -531,15 +532,18 @@ actions:
 
     <section class="cta-band" id="next">
       <div class="container">
-        <h2>Ready to evaluate PhaseOne10841?</h2>
+        <h2>Public source · hire Veracity Integrity</h2>
         <p>
-          Request early access from Veracity Integrity, explore sales options,
-          or review the source on GitHub.
+          PhaseOne10841 is <strong>public</strong> on
+          <a href="https://github.com/veracitylife/PhaseOne10841-VI" rel="noopener noreferrer" target="_blank">GitHub</a>.
+          Hire Veracity Integrity to implement PhaseOne for you, or for other cybersecurity projects.
         </p>
         <div class="hero-ctas" style="justify-content:center">
-          <a class="btn btn-primary" href="mailto:info@veracityintegrity.com?subject=PhaseOne10841%20Early%20Access">Request early access</a>
-          <a class="btn btn-ghost" href="/sales.html">Sales &amp; early access</a>
+          <a class="btn btn-primary" href="/hire.html#intake">Hire us to implement PhaseOne</a>
+          <a class="btn btn-ghost" href="/hire.html#intake">Other cybersecurity projects</a>
+          <a class="btn btn-ghost" href="/sales.html">Sales</a>
           <a class="btn btn-ghost" href="mailto:support@veracityintegrity.com">Email support</a>
+          <a class="btn btn-ghost" href="https://github.com/veracitylife/PhaseOne10841-VI" rel="noopener noreferrer" target="_blank">Public GitHub repo</a>
         </div>
       </div>
     </section>
@@ -550,7 +554,7 @@ actions:
           <p class="section-label">Company</p>
           <h2>Veracity Integrity LLC</h2>
           <p>
-            PhaseOne10841 is a product of Veracity Integrity LLC—building defensive
+            PhaseOne10841 is a product of Veracity Integrity LLC-building defensive
             integrity controls for modern agentic systems.
           </p>
           <a class="btn btn-primary" href="https://VeracityIntegrity.com" rel="noopener noreferrer" target="_blank">Visit VeracityIntegrity.com</a>
@@ -574,7 +578,7 @@ actions:
         <p class="muted">Defensive Agent Security Gateway</p>
         <p class="muted">A product of <a href="https://VeracityIntegrity.com">Veracity Integrity LLC</a></p>
         <p class="muted"><a href="https://github.com/veracitylife/PhaseOne10841-VI" rel="noopener noreferrer" target="_blank">GitHub</a></p>
-        <p class="muted"><a href="/demo.html">Demo</a> · <a href="/sales.html">Sales</a></p>
+        <p class="muted"><a href="/demo.html">Demo</a> · <a href="/sales.html">Sales</a> · <a href="/hire.html">Hire</a></p>
       </div>
       <div>
         <p class="footer-heading">Contact</p>
@@ -590,10 +594,11 @@ actions:
           autonomous agents. They do not include exploit steps, attack proofs of
           concept, payloads, or instructions for unauthorized access.
         </p>
+        <p class="muted"><a href="/terms.html">Professional Services Terms</a></p>
       </div>
     </div>
     <div class="container footer-bottom">
-      <p>© 2026 Veracity Integrity LLC. All rights reserved.</p>
+      <p>&copy; 2026 Veracity Integrity LLC. All rights reserved.</p>
       <a href="#top">Back to top</a>
     </div>
   </footer>

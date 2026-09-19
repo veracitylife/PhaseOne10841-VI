@@ -306,7 +306,22 @@ export async function confirmPendingAction(
       ok: result.ok,
     },
   });
-  
+
+  try {
+    const { recordPlaybookOutcome } = await import('../../shared/src/playbook-learn.js');
+    await recordPlaybookOutcome({
+      playbook_id: playbook.id,
+      action_type: pending.action_type,
+      outcome: 'confirmed',
+      confirmation_id: confirmationId,
+      actor_email: approvedBy,
+      trigger_event: pending.trigger_event as unknown as Record<string, unknown>,
+      metadata: { action_ok: result.ok },
+    });
+  } catch {
+    /* learn loop best-effort */
+  }
+
   return { ok: result.ok, execution };
 }
 
@@ -331,7 +346,21 @@ export async function denyPendingAction(
       action_type: pending.action_type,
     },
   });
-  
+
+  try {
+    const { recordPlaybookOutcome } = await import('../../shared/src/playbook-learn.js');
+    await recordPlaybookOutcome({
+      playbook_id: pending.playbook_id,
+      action_type: pending.action_type,
+      outcome: 'denied',
+      confirmation_id: confirmationId,
+      actor_email: deniedBy,
+      trigger_event: pending.trigger_event as unknown as Record<string, unknown>,
+    });
+  } catch {
+    /* learn loop best-effort */
+  }
+
   return { ok: true };
 }
 

@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: phaseone
+
+commonLabels:
+  app.kubernetes.io/part-of: phaseone10841
+  app.kubernetes.io/managed-by: kustomize
+  vendor: Veracity Integrity LLC
+
+resources:
+  - namespace.yaml
+  - serviceaccount.yaml
+  - configmap.yaml
+  - secret.yaml
+  - deployment-gateway.yaml
+  - deployment-dashboard.yaml
+  - service-gateway.yaml
+  - service-dashboard.yaml
+  - cronjob-retention.yaml
+
+# Helm equivalent: deploy/helm/phaseone — use `helm template` for parity checks.

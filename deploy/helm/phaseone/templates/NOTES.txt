@@ -1,0 +1,65 @@
+PhaseOne10841 has been deployed.
+
+Release: {{ .Release.Name }}
+Namespace: {{ .Release.Namespace }}
+Chart:   {{ .Chart.Name }}-{{ .Chart.Version }}
+App:     {{ .Chart.AppVersion }}
+
+Product: PhaseOne10841 — Defensive Agent Security Gateway
+Vendor:  Veracity Integrity LLC · https://VeracityIntegrity.com
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ DEFENSIVE ONLY — populate secrets before production use
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Create or patch the application secret (never commit real credentials):
+
+   kubectl -n {{ .Release.Namespace }} create secret generic {{ include "phaseone.secretName" . }} \
+     --from-literal=PHASEONE_SESSION_SECRET='REPLACE_WITH_STRONG_SECRET' \
+     --from-literal=PHASEONE_ADMIN_EMAILS='admin@example.com' \
+     --from-literal=DATABASE_URL='postgres://USER:PASS@HOST:5432/phaseone' \
+     --dry-run=client -o yaml | kubectl apply -f -
+
+   Or set existingSecret.name in values to reference a pre-created secret.
+
+{{- if .Values.postgres.enabled }}
+
+2. Lab embedded Postgres is enabled. Patch credentials before relying on it:
+
+   kubectl -n {{ .Release.Namespace }} patch secret {{ include "phaseone.postgresSecretName" . }} \
+     -p '{"stringData":{"password":"REPLACE_VIA_KUBECTL"}}'
+
+   Update DATABASE_URL in {{ include "phaseone.secretName" . }} to match.
+{{- else }}
+
+2. External Postgres expected. Set database.externalUrlSecret or DATABASE_URL in {{ include "phaseone.secretName" . }}.
+{{- end }}
+
+3. Port-forward for local access (ClusterIP default):
+
+   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "phaseone.gatewayServiceName" . }} 8080:{{ .Values.service.gateway.port }}
+   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "phaseone.dashboardServiceName" . }} 3000:{{ .Values.service.dashboard.port }}
+
+4. Health checks:
+
+   curl http://127.0.0.1:8080/health
+
+{{- if .Values.ingress.enabled }}
+
+5. Ingress hosts configured. Ensure TLS secret exists:
+
+   {{- range .Values.ingress.tls }}
+   kubectl -n {{ $.Release.Namespace }} get secret {{ .secretName }}
+   {{- end }}
+{{- else }}
+
+5. Ingress is disabled. Enable in values and provide a TLS secret (placeholder: phaseone-tls-placeholder).
+{{- end }}
+
+6. CronJobs:
+   - Retention: {{ ternary "enabled" "disabled" .Values.retention.enabled }} ({{ .Values.retention.schedule }})
+   - Backup:    {{ ternary "enabled" "disabled" .Values.backup.enabled }} ({{ .Values.backup.schedule }})
+
+Documentation: docs/kubernetes.md in the repository.
+
+Commercial support: https://VeracityIntegrity.com

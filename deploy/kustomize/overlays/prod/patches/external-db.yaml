@@ -1,0 +1,7 @@
+# Production uses external managed Postgres — set DATABASE_URL via secret, not embedded DB.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: phaseone-secrets
+stringData:
+  DATABASE_URL: ""

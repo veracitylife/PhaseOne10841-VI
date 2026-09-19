@@ -1,0 +1,57 @@
+{{- if .Values.retention.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "phaseone.fullname" . }}-retention
+  labels:
+    {{- include "phaseone.labels" . | nindent 4 }}
+    app.kubernetes.io/component: retention
+spec:
+  schedule: {{ .Values.retention.schedule | quote }}
+  concurrencyPolicy: {{ .Values.retention.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ .Values.retention.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.retention.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            {{- include "phaseone.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: retention
+        spec:
+          restartPolicy: {{ .Values.retention.restartPolicy }}
+          serviceAccountName: {{ include "phaseone.serviceAccountName" . }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          containers:
+            - name: retention
+              image: {{ include "phaseone.image" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command:
+                - tsx
+                - scripts/retention-cleanup.ts
+              args:
+                {{- toYaml .Values.retention.args | nindent 16 }}
+              envFrom:
+                - configMapRef:
+                    name: {{ include "phaseone.configMapName" . }}
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "phaseone.databaseUrlSecretName" . }}
+                      key: {{ include "phaseone.databaseUrlSecretKey" . }}
+                {{- include "phaseone.secretEnv" . | nindent 16 }}
+              resources:
+                {{- toYaml .Values.retention.resources | nindent 16 }}
+              securityContext:
+                {{- toYaml .Values.containerSecurityContext | nindent 16 }}
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

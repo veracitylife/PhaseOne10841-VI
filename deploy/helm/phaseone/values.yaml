@@ -1,0 +1,264 @@
+# PhaseOne10841 Helm values — DEFENSIVE ONLY
+# Veracity Integrity LLC · https://VeracityIntegrity.com
+#
+# Never commit real credentials. Create secrets with kubectl (see docs/kubernetes.md).
+
+nameOverride: ""
+fullnameOverride: ""
+
+replicaCount:
+  gateway: 1
+  dashboard: 1
+
+image:
+  repository: phaseone
+  tag: "0.8.0"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+# Applied to all workloads (gateway, dashboard, cronjobs).
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  gateway:
+    type: ClusterIP
+    port: 8080
+    annotations: {}
+  dashboard:
+    type: ClusterIP
+    port: 3000
+    annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: phaseone.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: gateway
+          port: 8080
+    - host: dashboard.phaseone.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: dashboard
+          port: 3000
+  tls:
+    - secretName: phaseone-tls-placeholder
+      hosts:
+        - phaseone.example.com
+        - dashboard.phaseone.example.com
+
+# Prefer external managed Postgres in production (set postgres.enabled=false).
+# Provide DATABASE_URL via existingSecret or database.externalUrlSecret.
+postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "16-alpine"
+    pullPolicy: IfNotPresent
+  service:
+    port: 5432
+  auth:
+    # Lab placeholders only — override via existingSecret in real deployments.
+    username: phaseone
+    password: "" # intentionally empty; use existingSecret
+    database: phaseone
+    existingSecret: ""
+    secretKeys:
+      username: username
+      password: password
+      database: database
+  persistence:
+    enabled: true
+    size: 8Gi
+    storageClass: ""
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+database:
+  # When postgres.enabled=false, point at external Postgres.
+  externalUrlSecret:
+    name: ""
+    key: DATABASE_URL
+
+# If existingSecret.name is set, chart will NOT create a Secret; pods use secretKeyRef.
+# If create=true and name is empty, a placeholder Secret with empty stringData keys is created.
+existingSecret:
+  create: true
+  name: ""
+
+# Non-secret configuration (rendered into ConfigMap).
+config:
+  NODE_ENV: production
+  GATEWAY_PORT: "8080"
+  DASHBOARD_PORT: "3000"
+  GATEWAY_URL: http://phaseone-gateway:8080
+  UPSTREAM_PROVIDER: mock
+  OPENAI_BASE_URL: https://api.openai.com/v1
+  OLLAMA_BASE_URL: http://host.docker.internal:11434/v1
+  OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
+  PHASEONE_POLICY_PATH: /app/policy/default-policy.yaml
+  PHASEONE_RULES_DIR: /app/rules
+  PHASEONE_PLAYBOOKS_DIR: /app/playbooks
+  PHASEONE_METRICS_ENABLED: "true"
+  PHASEONE_RETENTION_DAYS: "30"
+  PHASEONE_APPROVAL_TIMEOUT_MS: "120000"
+  PHASEONE_API_RATE_LIMIT: "120"
+  PHASEONE_API_RATE_WINDOW_MS: "60000"
+  PHASEONE_OTP_RATE_LIMIT: "5"
+  PHASEONE_DASHBOARD_AUTH: "true"
+  PHASEONE_SECURE_COOKIES: "false"
+  PHASEONE_GATEKEEPER_ENABLED: "false"
+  PHASEONE_GATEKEEPER_DRY_RUN: "true"
+  PHASEONE_BACKUP_DIR: /tmp/backups
+  PHASEONE_OTP_FALLBACK_FILE: /tmp/phaseone-otp.log
+  SMTP_FROM: noreply@clovisstar.com
+  SMTP_PORT: "587"
+  SMTP_SECURE: "false"
+
+# Secret keys — placeholders only. Values are NEVER set in values.yaml.
+# Populate via kubectl create secret or existingSecret.name.
+secrets:
+  DATABASE_URL: ""
+  PHASEONE_SESSION_SECRET: ""
+  PHASEONE_ADMIN_EMAILS: ""
+  PHASEONE_VIEWER_EMAILS: ""
+  OPENAI_API_KEY: ""
+  OPENROUTER_API_KEY: ""
+  SMTP_HOST: ""
+  SMTP_USER: ""
+  SMTP_PASS: ""
+  PHASEONE_SIEM_WEBHOOK_URL: ""
+  PHASEONE_ALERT_WEBHOOK_URL: ""
+  PHASEONE_OIDC_ISSUER: ""
+  PHASEONE_OIDC_CLIENT_ID: ""
+  PHASEONE_OIDC_CLIENT_SECRET: ""
+
+gateway:
+  command:
+    - tsx
+    - gateway/src/index.ts
+  resources:
+    limits:
+      cpu: "1"
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 20
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 6
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 6
+  extraEnv: []
+  extraVolumeMounts: []
+  extraVolumes: []
+
+dashboard:
+  command:
+    - tsx
+    - dashboard/src/server.ts
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 6
+  readinessProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 6
+  extraEnv: []
+  extraVolumeMounts: []
+  extraVolumes: []
+
+retention:
+  enabled: true
+  schedule: "0 3 * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  concurrencyPolicy: Forbid
+  restartPolicy: OnFailure
+  args:
+    - "--execute"
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+backup:
+  enabled: false
+  schedule: "0 2 * * 0"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  concurrencyPolicy: Forbid
+  restartPolicy: OnFailure
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

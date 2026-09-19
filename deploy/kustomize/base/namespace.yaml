@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: phaseone
+  labels:
+    app.kubernetes.io/name: phaseone
+    app.kubernetes.io/part-of: phaseone10841

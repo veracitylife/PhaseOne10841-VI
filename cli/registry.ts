@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const ROOT = resolve(__dirname, '..');
 
-export const VERSION = '0.7.0';
+export const VERSION = '0.8.0';
 export const PRODUCT_NAME = 'PhaseOne10841';
 export const COMPANY = 'Veracity Integrity LLC';
 export const WEBSITE = 'https://VeracityIntegrity.com';
@@ -1588,10 +1588,160 @@ export const commands: CommandDefinition[] = [
           return { ok: true, exitCode: 0, output: lines.join('\n'), data: output };
         }
 
-        return { ok: false, exitCode: 1, output: '', error: 'Unknown subcommand. Use: status, run, dry-run, simulate, blast-radius, list-playbooks, confirm, deny, llm-check' };
+        if (subcommand === 'effectiveness' || subcommand === 'learn') {
+          const { getEffectivenessReport, recordPlaybookOutcome, __testResetLearnLoop } = await import(
+            '../shared/src/playbook-learn.js'
+          );
+          void __testResetLearnLoop;
+          let days = 7;
+          for (let i = 0; i < args.length; i++) {
+            if ((args[i] === '--days' || args[i] === '-d') && args[i + 1]) {
+              days = parseInt(args[++i], 10);
+            }
+          }
+          // Seed a tiny sample in memory if empty so CLI demos are useful offline
+          const report = await getEffectivenessReport({ days });
+          if (report.metrics.length === 0) {
+            await recordPlaybookOutcome({
+              playbook_id: 'demo-seed',
+              outcome: 'denied',
+              actor_email: 'cli@localhost',
+              admin_notes: 'offline seed for empty learn loop',
+            });
+            await recordPlaybookOutcome({
+              playbook_id: 'demo-seed',
+              outcome: 'denied',
+              actor_email: 'cli@localhost',
+            });
+            await recordPlaybookOutcome({
+              playbook_id: 'demo-seed',
+              outcome: 'denied',
+              actor_email: 'cli@localhost',
+            });
+            await recordPlaybookOutcome({
+              playbook_id: 'demo-seed',
+              outcome: 'denied',
+              actor_email: 'cli@localhost',
+            });
+            await recordPlaybookOutcome({
+              playbook_id: 'demo-seed',
+              outcome: 'denied',
+              actor_email: 'cli@localhost',
+            });
+            await recordPlaybookOutcome({
+              playbook_id: 'demo-seed',
+              outcome: 'confirmed',
+              actor_email: 'cli@localhost',
+            });
+          }
+          const finalReport = await getEffectivenessReport({ days });
+          if (json) {
+            return {
+              ok: true,
+              exitCode: 0,
+              output: JSON.stringify(finalReport, null, 2),
+              data: finalReport,
+            };
+          }
+          const lines = [
+            `${PRODUCT_NAME} Playbook Learn Loop`,
+            `Window: ${finalReport.window_days} days`,
+            '',
+            'Effectiveness:',
+          ];
+          for (const m of finalReport.metrics) {
+            lines.push(
+              `  ${m.playbook_id}: total=${m.total} deny=${(m.deny_rate * 100).toFixed(0)}% confirm=${(m.confirm_rate * 100).toFixed(0)}%`
+            );
+          }
+          if (finalReport.suggestions.length) {
+            lines.push('', 'Suggestions (human approval required):');
+            for (const s of finalReport.suggestions) {
+              lines.push(`  • [${s.kind}] ${s.playbook_id}: ${s.message}`);
+            }
+          } else {
+            lines.push('', 'No suggestions at this time.');
+          }
+          lines.push('', `${COMPANY}`);
+          return { ok: true, exitCode: 0, output: lines.join('\n'), data: finalReport };
+        }
+
+        return { ok: false, exitCode: 1, output: '', error: 'Unknown subcommand. Use: status, run, dry-run, simulate, blast-radius, effectiveness, list-playbooks, confirm, deny, llm-check' };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         return { ok: false, exitCode: 1, output: '', error: `Gatekeeper error: ${msg}` };
+      }
+    },
+  },
+  {
+    name: 'canary',
+    description: 'Canary package management — list, sign, verify (Ed25519)',
+    usage: 'phaseone canary <list|sign|verify> [--json]',
+    category: 'defense-detection',
+    examples: [
+      'phaseone canary list',
+      'phaseone canary sign',
+      'phaseone canary verify',
+    ],
+    tips: [
+      'Signatures use Ed25519 keys under canaries/.keys (private key mode 0600)',
+      'Verify is warn-oriented — does not block gateway startup',
+    ],
+    async execute(args, opts): Promise<CommandResult> {
+      const sub = args[0] ?? 'list';
+      const json = opts.json || args.includes('--json');
+      try {
+        const {
+          listCanariesDetailed,
+          signAllCanaries,
+          verifyAllCanaries,
+          __testResetCanaryManager,
+        } = await import('../canaries/src/manager.js');
+        void __testResetCanaryManager;
+        const { ensureCanaryKeys, getPublicKeyInfo } = await import('../shared/src/canary-sign.js');
+
+        if (sub === 'list') {
+          const data = listCanariesDetailed();
+          if (json) return { ok: true, exitCode: 0, output: JSON.stringify(data, null, 2), data };
+          const lines = [`${PRODUCT_NAME} Canaries`, ''];
+          for (const c of data) {
+            lines.push(`  ${c.canary_id} · ${c.name} · ${c.marker_preview} · sig=${c.signature ? 'yes' : 'no'}`);
+          }
+          lines.push('', `${COMPANY}`);
+          return { ok: true, exitCode: 0, output: lines.join('\n'), data };
+        }
+        if (sub === 'sign') {
+          ensureCanaryKeys();
+          const result = signAllCanaries();
+          if (json) return { ok: true, exitCode: 0, output: JSON.stringify(result, null, 2), data: result };
+          return {
+            ok: true,
+            exitCode: 0,
+            output: `Signed ${result.signed} canaries with key ${result.key_id}\n${COMPANY}`,
+            data: result,
+          };
+        }
+        if (sub === 'verify') {
+          ensureCanaryKeys();
+          // Sign first if unsigned so verify has something meaningful in fresh installs
+          const listed = listCanariesDetailed();
+          if (listed.some((c) => !c.signature)) signAllCanaries();
+          const results = verifyAllCanaries();
+          const payload = { results, public_key: getPublicKeyInfo() };
+          if (json) return { ok: true, exitCode: 0, output: JSON.stringify(payload, null, 2), data: payload };
+          const lines = [`${PRODUCT_NAME} Canary Verify`, ''];
+          for (const r of results) {
+            const status = r.valid === true ? '✓ valid' : r.valid === false ? '✗ INVALID' : '? unsigned';
+            lines.push(`  ${r.canary_id} · ${r.name}: ${status}${r.warning ? ` (${r.warning})` : ''}`);
+          }
+          lines.push('', `${COMPANY}`);
+          const ok = results.every((r) => r.valid !== false);
+          return { ok, exitCode: ok ? 0 : 1, output: lines.join('\n'), data: payload };
+        }
+        return { ok: false, exitCode: 1, output: '', error: 'Unknown subcommand. Use: list, sign, verify' };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, exitCode: 1, output: '', error: msg };
       }
     },
   },
