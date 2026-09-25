@@ -1,16 +1,16 @@
 # PhaseOne10841 v0.6.0 — Veracity Integrity LLC
-FROM node:20-bookworm-slim AS deps
+FROM node:25-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install
 
-FROM node:20-bookworm-slim AS build
+FROM node:25-bookworm-slim AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build || npx tsc --noEmit || true
 
-FROM node:20-bookworm-slim
+FROM node:25-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production
 # node:20-bookworm-slim already has uid/gid 1000 (user `node`) — reuse it
